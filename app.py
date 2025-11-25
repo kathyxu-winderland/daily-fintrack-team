@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, time
 # --- 1. CONFIGURATION & STYLING ---
 st.set_page_config(page_title="FinTrack Sync", page_icon="📈", layout="wide")
 
-# Custom CSS for the "Top Tier" look
+# Custom CSS
 st.markdown("""
 <style>
     .main { background-color: #f8fafc; }
@@ -19,25 +19,25 @@ st.markdown("""
 
 # --- 2. DATA SETUP ---
 
-# Categories Configuration
+# Categories Configuration with ICONS
 CATEGORIES = [
-    "1. Daily Funding (12PM Cutoff)",
-    "2. Budget 2026",
-    "3. Revenue Share",
-    "4. ATB Reporting",
-    "5. SOFR Renewal",
-    "6. GIC"
+    "💸 Daily Funding (12PM Cutoff)",
+    "📊 Budget 2026",
+    "🤝 Revenue Share",
+    "🏦 ATB Reporting",
+    "🔄 SOFR Renewal",
+    "🔐 GIC"
 ]
 
-# !!! EDIT YOUR TEAM NAMES HERE !!!
-TEAM = ["All", "Kathy", "Tony", "Thomas", "Karim"] 
+# Team Members - EDIT THESE NAMES
+TEAM = ["All", "Jason", "Amanda", "Raj", "Finance Lead"] 
 
 # Initialize Session State (Mock Database)
 if 'tasks' not in st.session_state:
     st.session_state.tasks = pd.DataFrame([
-        {"Task": "Approve Wire Transfers", "Category": "1. Daily Funding (12PM Cutoff)", "Assignee": TEAM[1], "Due Time": time(11, 30), "Status": False, "Urgent": True},
-        {"Task": "Q2 Variance Analysis", "Category": "2. Budget 2026", "Assignee": TEAM[2], "Due Time": time(16, 00), "Status": False, "Urgent": False},
-        {"Task": "Submit Compliance Doc", "Category": "4. ATB Reporting", "Assignee": TEAM[3], "Due Time": time(9, 00), "Status": False, "Urgent": False},
+        {"Task": "Approve Wire Transfers", "Category": "💸 Daily Funding (12PM Cutoff)", "Assignee": TEAM[1], "Due Time": time(11, 30), "Status": False, "Urgent": True},
+        {"Task": "Q2 Variance Analysis", "Category": "📊 Budget 2026", "Assignee": TEAM[2], "Due Time": time(16, 00), "Status": False, "Urgent": False},
+        {"Task": "Submit Compliance Doc", "Category": "🏦 ATB Reporting", "Assignee": TEAM[3], "Due Time": time(9, 00), "Status": False, "Urgent": False},
     ])
 
 # Initialize Archive State
@@ -85,7 +85,7 @@ with col2:
     bg_class = "urgent-box" if is_urgent else "normal-box"
     st.markdown(f"""
     <div class="{bg_class}">
-        <h3 style="margin:0">💰 Daily Funding</h3>
+        <h3 style="margin:0">💸 Daily Funding</h3>
         <p style="font-size: 24px; font-weight: bold; margin: 5px 0 0 0;">{hours}h {mins}m remaining</p>
         <small>12:00 PM Hard Cut-off</small>
     </div>
@@ -126,14 +126,16 @@ with tab1:
 
     # DATA EDITOR (The Task List)
     st.subheader("Your Activities")
+    
+    # We use column_config to make the Category dropdown width distinct
     edited_df = st.data_editor(
         df,
         column_config={
-            "Status": st.column_config.CheckboxColumn("Done", help="Check to mark done", default=False),
+            "Status": st.column_config.CheckboxColumn("Done", width="small", default=False),
             "Category": st.column_config.SelectboxColumn("Category", options=CATEGORIES, width="medium"),
             "Assignee": st.column_config.SelectboxColumn("Assignee", options=TEAM, width="small"),
             "Due Time": st.column_config.TimeColumn("Due By", format="h:mm a"),
-            "Urgent": st.column_config.CheckboxColumn("Urgent", default=False),
+            "Urgent": st.column_config.CheckboxColumn("Urgent", width="small", default=False),
         },
         disabled=["Task"],
         hide_index=True,
@@ -141,8 +143,7 @@ with tab1:
         key="editor"
     )
 
-    # Update session state with changes from the editor
-    # We match the index to update the original dataframe correctly
+    # Update session state
     if not df.equals(edited_df):
         st.session_state.tasks.update(edited_df)
         st.rerun()
@@ -155,11 +156,8 @@ with tab1:
         completed_tasks = st.session_state.tasks[st.session_state.tasks["Status"] == True]
         if not completed_tasks.empty:
             if st.button(f"📥 Archive ({len(completed_tasks)}) Completed"):
-                # Add timestamp
                 completed_tasks["Completed At"] = datetime.now().strftime("%Y-%m-%d %H:%M")
-                # Add to archive
                 st.session_state.archived = pd.concat([st.session_state.archived, completed_tasks], ignore_index=True)
-                # Remove from active
                 st.session_state.tasks = st.session_state.tasks[st.session_state.tasks["Status"] == False]
                 st.success("Tasks moved to Archive!")
                 st.rerun()
@@ -186,7 +184,7 @@ with tab2:
         st.dataframe(
             st.session_state.archived,
             column_config={
-                "Status": None, # Hide status column in archive
+                "Status": None, 
                 "Completed At": st.column_config.TextColumn("Completed At")
             },
             hide_index=True,
