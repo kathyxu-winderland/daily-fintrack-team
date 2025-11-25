@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta, time
-import plotly.express as px
 
 # --- 1. CONFIGURATION & STYLING ---
 st.set_page_config(page_title="FinTrack Sync", page_icon="📈", layout="wide")
