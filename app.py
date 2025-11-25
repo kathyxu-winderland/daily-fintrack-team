@@ -30,7 +30,7 @@ CATEGORIES = [
 ]
 
 # Team Members - EDIT THESE NAMES
-TEAM = ["All", "Jason", "Amanda", "Raj", "Finance Lead"] 
+TEAM = ["All", "Kathy", "Tony", "Thomas", "Karim"] 
 
 # Initialize Session State (Mock Database)
 if 'tasks' not in st.session_state:
