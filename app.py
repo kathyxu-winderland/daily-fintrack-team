@@ -51,7 +51,7 @@ CATEGORIES = [
     "🔐 GIC"
 ]
 
-TEAM = ["All", "Jason", "Amanda", "Raj", "Finance Lead"]
+TEAM = ["All", "Kathy", "Tony", "Agnis", "Thomas", "Karim"]
 
 # Initialize Session State
 if 'tasks' not in st.session_state:
