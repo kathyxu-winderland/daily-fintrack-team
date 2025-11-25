@@ -59,17 +59,41 @@ CATEGORIES = [
 
 TEAM = ["All", "Kathy", "Tony", "Agnis", "Thomas", "Karim"]
 
+# Helper to create mock dates relative to "now" so the app always looks fresh
+def get_future_date(days=0, hours=0):
+    return datetime.now() + timedelta(days=days, hours=hours)
+
 # Initialize Session State
 if 'tasks' not in st.session_state:
     st.session_state.tasks = pd.DataFrame([
-        {"Task": "Approve Wire Transfers", "Category": "💸 Daily Funding (12PM)", "Assignee": TEAM[1], "Due Time": time(11, 30), "Status": False, "Urgent": True},
-        {"Task": "Verify Cash Position", "Category": "💸 Daily Funding (12PM)", "Assignee": TEAM[1], "Due Time": time(10, 00), "Status": False, "Urgent": True},
-        {"Task": "Q2 Variance Analysis", "Category": "📊 Budget 2026", "Assignee": TEAM[2], "Due Time": time(16, 00), "Status": False, "Urgent": False},
-        {"Task": "Submit Compliance Doc", "Category": "🏦 ATB Reporting", "Assignee": TEAM[3], "Due Time": time(9, 00), "Status": False, "Urgent": False},
+        {
+            "Task": "Approve Wire Transfers", 
+            "Category": "💸 Daily Funding (12PM)", 
+            "Assignee": TEAM[1], 
+            "Due Date": get_future_date(hours=1), # Due in 1 hour
+            "Status": False, 
+            "Urgent": True
+        },
+        {
+            "Task": "Q2 Variance Analysis", 
+            "Category": "📊 Budget 2026", 
+            "Assignee": TEAM[2], 
+            "Due Date": get_future_date(days=2, hours=4), # Due in 2 days
+            "Status": False, 
+            "Urgent": False
+        },
+        {
+            "Task": "Submit Compliance Doc", 
+            "Category": "🏦 ATB Reporting", 
+            "Assignee": TEAM[3], 
+            "Due Date": get_future_date(days=1, hours=-2), # Due tomorrow
+            "Status": False, 
+            "Urgent": False
+        },
     ])
 
 if 'archived' not in st.session_state:
-    st.session_state.archived = pd.DataFrame(columns=["Task", "Category", "Assignee", "Due Time", "Status", "Urgent", "Completed At"])
+    st.session_state.archived = pd.DataFrame(columns=["Task", "Category", "Assignee", "Due Date", "Status", "Urgent", "Completed At"])
 
 # --- 3. HELPER FUNCTIONS ---
 
@@ -83,11 +107,17 @@ def check_funding_deadline():
     mins = int((time_left.total_seconds() % 3600) // 60)
     return hours, mins, time_left.total_seconds() < 3600
 
+def generate_gcal_link(title, due_datetime):
+    base = "https://calendar.google.com/calendar/render?action=TEMPLATE"
+    # Format: YYYYMMDDTHHMMSSZ
+    start = due_datetime.strftime("%Y%m%dT%H%M%S")
+    end = (due_datetime + timedelta(hours=1)).strftime("%Y%m%dT%H%M%S")
+    return f"{base}&text={title.replace(' ', '+')}&dates={start}/{end}"
+
 def toggle_status(index):
     st.session_state.tasks.at[index, 'Status'] = not st.session_state.tasks.at[index, 'Status']
 
 # --- 4. NEW BANNER SECTION ---
-# This runs at the top of the page
 today_str = datetime.now().strftime("%A, %B %d, %Y")
 
 st.markdown(f"""
@@ -113,12 +143,21 @@ with st.sidebar:
         new_task = st.text_input("Task Name")
         new_cat = st.selectbox("Category", CATEGORIES)
         new_assignee = st.selectbox("Assignee", TEAM[1:])
-        new_time = st.time_input("Due", value=time(12, 00))
+        
+        # New: Split Date and Time Inputs
+        c_date, c_time = st.columns(2)
+        input_date = c_date.date_input("Due Date", value=datetime.now())
+        input_time = c_time.time_input("Due Time", value=time(12, 00))
+        
         is_urgent = st.checkbox("Urgent Priority")
+        
         if st.form_submit_button("Add Task"):
+            # Combine Date and Time
+            final_due_dt = datetime.combine(input_date, input_time)
+            
             new_entry = {
                 "Task": new_task, "Category": new_cat, 
-                "Assignee": new_assignee, "Due Time": new_time, 
+                "Assignee": new_assignee, "Due Date": final_due_dt, 
                 "Status": False, "Urgent": is_urgent
             }
             st.session_state.tasks = pd.concat([pd.DataFrame([new_entry]), st.session_state.tasks], ignore_index=True)
@@ -182,6 +221,12 @@ for i, category in enumerate(CATEGORIES):
                 # Checkbox
                 done = c1.checkbox("", value=row["Status"], key=f"check_{idx}", on_change=toggle_status, args=(idx,))
                 
+                # Format Date nicely (e.g. "Nov 25, 2025 • 11:30 AM")
+                due_dt_str = row['Due Date'].strftime('%b %d, %Y • %I:%M %p')
+                
+                # Google Calendar Link
+                gcal_link = generate_gcal_link(row['Task'], row['Due Date'])
+                
                 # Text Content
                 task_style = "text-decoration: line-through; color: #94a3b8;" if row["Status"] else "font-weight: 500; color: #334155;"
                 urgent_badge = "<span style='background:#fee2e2; color:#ef4444; font-size:10px; padding:2px 6px; border-radius:4px;'>URGENT</span>" if row["Urgent"] else ""
@@ -189,9 +234,12 @@ for i, category in enumerate(CATEGORIES):
                 c2.markdown(f"""
                 <div style="line-height: 1.4; margin-bottom: 8px;">
                     <span style="{task_style} font-size: 14px;">{row['Task']}</span><br>
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:4px;">
+                    <div style="margin-top:4px;">
                         <span style="font-size: 11px; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 4px;">👤 {row['Assignee']}</span>
-                        <span style="font-size: 11px; color: #64748b;">⏰ {row['Due Time'].strftime('%I:%M %p')} {urgent_badge}</span>
+                        <span style="font-size: 11px; color: #64748b; margin-left: 5px;">📅 {due_dt_str} {urgent_badge}</span>
+                    </div>
+                     <div style="margin-top:5px; text-align: right;">
+                        <a href="{gcal_link}" target="_blank" style="text-decoration:none; color: #4f46e5; font-size: 10px; font-weight: bold;">+ Add to G-Cal</a>
                     </div>
                 </div>
                 <div style="border-bottom: 1px solid #f1f5f9; margin: 8px 0;"></div>
