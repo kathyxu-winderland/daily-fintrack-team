@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta, time
-import requests # Imported at top level for safety
+import requests 
 
 # --- 1. CONFIGURATION & STYLING ---
 st.set_page_config(page_title="FinTrack Sync", page_icon="📈", layout="wide")
@@ -24,17 +24,21 @@ TEAM_SLACK_IDS = {
     "Thomas": "U06CVDPFAPK"
 }
 
-# --- CATEGORIES ---
-CATEGORIES = [
-    "💸 Daily Funding (12PM)",
-    "💳 ACH Request",
-    "🧾 Weekly Vendor Payment",
-    "📊 Budget & Forecast",
-    "🤝 Revenue Share",
-    "🏦 ATB Reporting",
-    "🔄 SOFR Renewal",
-    "🔐 GIC"
-]
+# --- CATEGORIES & COLOR MAPPING ---
+# We map each category to a specific Hex Color Code
+CATEGORY_CONFIG = {
+    "💸 Daily Funding (12PM)":  "#e11d48", # Red (Urgent)
+    "💳 ACH Request":           "#3b82f6", # Blue
+    "🧾 Weekly Vendor Payment": "#10b981", # Emerald Green
+    "📊 Budget 2026":           "#8b5cf6", # Purple
+    "🤝 Revenue Share":         "#f59e0b", # Amber/Orange
+    "🏦 ATB Reporting":         "#06b6d4", # Cyan
+    "🔄 SOFR Renewal":          "#ec4899", # Pink
+    "🔐 GIC":                   "#64748b"  # Slate Gray
+}
+
+# Create a simple list for the dropdowns
+CATEGORIES = list(CATEGORY_CONFIG.keys())
 
 # Custom CSS
 st.markdown("""
@@ -51,13 +55,17 @@ st.markdown("""
         display: flex; align-items: center; justify-content: space-between;
     }
     div[data-testid="column"] { background-color: transparent; }
+    
     .category-card {
-        background-color: white; padding: 20px; border-radius: 12px;
-        border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-        margin-bottom: 20px; transition: transform 0.2s;
+        background-color: white; 
+        padding: 20px; 
+        border-radius: 12px;
+        border: 1px solid #e2e8f0; 
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+        margin-bottom: 20px; 
+        transition: transform 0.2s;
     }
-    .urgent-card { border-top: 5px solid #e11d48; }
-    .normal-card { border-top: 5px solid #6366f1; }
+    
     div[data-testid="stMetricValue"] { font-size: 1.8rem; }
     
     /* Make the Archive button stand out */
@@ -85,13 +93,11 @@ if 'archived' not in st.session_state:
 # --- 3. HELPER FUNCTIONS ---
 
 def get_slack_tag(name):
-    """Helper to convert name to Slack ID tag"""
     if name in TEAM_SLACK_IDS:
         return f"<@{TEAM_SLACK_IDS[name]}>"
     return name
 
 def send_slack_notification(task, assignee, category, due_date, urgent):
-    """Sends NEW TASK notification"""
     if not SLACK_WEBHOOK_URL: return
     
     slack_tag = get_slack_tag(assignee)
@@ -113,28 +119,16 @@ def send_slack_notification(task, assignee, category, due_date, urgent):
     except: pass
 
 def send_slack_completion_notification(task, assignee, category):
-    """Sends COMPLETED TASK notification"""
     if not SLACK_WEBHOOK_URL: return
-
     slack_tag = get_slack_tag(assignee)
-    
     payload = {
         "text": f"✅ Task Completed: {task}",
         "blocks": [
-            {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": f"✅ *Task Completed*\n*{task}*"
-                }
-            },
-            {
-                "type": "section",
-                "fields": [
-                    {"type": "mrkdwn", "text": f"*Completed By:*\n{slack_tag}"},
-                    {"type": "mrkdwn", "text": f"*Category:*\n{category}"}
-                ]
-            }
+            {"type": "section", "text": {"type": "mrkdwn", "text": f"✅ *Task Completed*\n*{task}*"}},
+            {"type": "section", "fields": [
+                {"type": "mrkdwn", "text": f"*Completed By:*\n{slack_tag}"},
+                {"type": "mrkdwn", "text": f"*Category:*\n{category}"}
+            ]}
         ]
     }
     try: requests.post(SLACK_WEBHOOK_URL, json=payload)
@@ -174,7 +168,7 @@ with st.sidebar:
     if st.button("🔔 Test Slack Connection"):
         if not SLACK_WEBHOOK_URL: st.error("URL missing in Secrets")
         else:
-            r = requests.post(SLACK_WEBHOOK_URL, json={"text": "🔔 Test: Connection working!"})
+            r = requests.post(SLACK_WEBHOOK_URL, json={"text": "🔔 Test: Hello Team! (Slack Connected)"})
             if r.status_code == 200: st.success("Success!")
             else: st.error(f"Error: {r.status_code}")
                 
@@ -210,12 +204,22 @@ st.markdown("<br>", unsafe_allow_html=True)
 # --- TASK GRID ---
 active_tasks = st.session_state.tasks
 grid_cols = st.columns(3)
+
+# We iterate through the CATEGORY_CONFIG dictionary to respect the order and keys
 for i, category in enumerate(CATEGORIES):
     col_idx = i % 3
     with grid_cols[col_idx]:
         cat_tasks = active_tasks[active_tasks["Category"] == category]
-        card_type = "urgent-card" if "Daily Funding" in category else "normal-card"
-        st.markdown(f"""<div class="category-card {card_type}"><h3 style="font-size: 16px; margin-bottom: 15px; font-weight: 600;">{category}</h3>""", unsafe_allow_html=True)
+        
+        # Get the specific color for this category
+        border_color = CATEGORY_CONFIG.get(category, "#6366f1") # Default to indigo if not found
+        
+        # Inject the dynamic color into the border style
+        st.markdown(f"""
+        <div class="category-card" style="border-top: 5px solid {border_color};">
+            <h3 style="font-size: 16px; margin-bottom: 15px; font-weight: 700; color: {border_color};">{category}</h3>
+        """, unsafe_allow_html=True)
+        
         if cat_tasks.empty:
             st.markdown("<div style='color: #cbd5e1; text-align: center; padding: 10px;'>No active tasks</div>", unsafe_allow_html=True)
         else:
@@ -233,29 +237,21 @@ for i, category in enumerate(CATEGORIES):
                 <div style="border-bottom: 1px solid #f1f5f9; margin: 8px 0;"></div>""", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
-# --- ARCHIVE BUTTON (BOTTOM OF PAGE) ---
+# --- ARCHIVE BUTTON ---
 st.markdown("<br><hr>", unsafe_allow_html=True)
 completed_tasks = st.session_state.tasks[st.session_state.tasks["Status"] == True]
-completed_tasks_count = len(completed_tasks)
+completed_count = len(completed_tasks)
 
-if completed_tasks_count > 0:
+if completed_count > 0:
     col_a, col_b = st.columns([4, 1])
     with col_b:
-        # PRIMARY ACTION BUTTON
-        if st.button(f"📥 Archive ({completed_tasks_count}) Completed Tasks", type="primary", use_container_width=True):
-            
-            # 1. SEND SLACK NOTIFICATIONS FOR EACH COMPLETED TASK
+        if st.button(f"📥 Archive ({completed_count}) Completed", type="primary", use_container_width=True):
             for index, row in completed_tasks.iterrows():
                 send_slack_completion_notification(row['Task'], row['Assignee'], row['Category'])
-            
-            # 2. MOVE TO ARCHIVE
             to_archive = completed_tasks.copy()
             to_archive["Completed At"] = datetime.now().strftime("%Y-%m-%d %H:%M")
             st.session_state.archived = pd.concat([st.session_state.archived, to_archive], ignore_index=True)
-            
-            # 3. REMOVE FROM ACTIVE
             st.session_state.tasks = st.session_state.tasks[st.session_state.tasks["Status"] == False]
-            
             st.success("Tasks archived & Slack notifications sent!")
             st.rerun()
 
