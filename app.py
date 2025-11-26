@@ -10,7 +10,7 @@ st.set_page_config(page_title="FinTrack Sync", page_icon="📈", layout="wide")
 if "SLACK_WEBHOOK_URL" in st.secrets:
     SLACK_WEBHOOK_URL = st.secrets["SLACK_WEBHOOK_URL"]
 else:
-    SLACK_WEBHOOK_URL = "hooks.slack.com/services/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"
+    SLACK_WEBHOOK_URL = "hooks.slack.com/services/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"
 
 # --- TEAM CONFIGURATION ---
 TEAM = ["All", "Kathy", "Tony", "Karim", "Agnis", "Thomas"]
