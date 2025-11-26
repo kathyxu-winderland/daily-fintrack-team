@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, time
 st.set_page_config(page_title="FinTrack Sync", page_icon="📈", layout="wide")
 
 # !!! PASTE YOUR SLACK WEBHOOK URL INSIDE THE QUOTES BELOW !!!
-SLACK_WEBHOOK_URL = "" 
+SLACK_WEBHOOK_URL = "https://hooks.slack.com/services/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" 
 
 # Custom CSS
 st.markdown("""
@@ -38,7 +38,7 @@ st.markdown("""
 # --- 2. DATA SETUP ---
 
 CATEGORIES = ["💸 Daily Funding (12PM)", "📊 Budget 2026", "🤝 Revenue Share", "🏦 ATB Reporting", "🔄 SOFR Renewal", "🔐 GIC"]
-TEAM = ["All", "Jason", "Amanda", "Raj", "Finance Lead"]
+TEAM = ["All", "Kathy", "Tony", "Angis", "Thomas", "Karim"]
 
 def get_future_date(days=0, hours=0):
     return datetime.now() + timedelta(days=days, hours=hours)
