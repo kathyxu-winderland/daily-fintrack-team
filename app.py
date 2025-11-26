@@ -11,11 +11,10 @@ if "SLACK_WEBHOOK_URL" in st.secrets:
 else:
     SLACK_WEBHOOK_URL = "hooks.slack.com/services/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"
 
-# --- TEAM CONFIGURATION (EDIT THIS!) ---
+# --- TEAM CONFIGURATION ---
 TEAM = ["All", "Kathy", "Tony", "Karim", "Agnis", "Thomas"]
 
-# PASTE REAL SLACK MEMBER IDs HERE
-# Find these in Slack Profile -> 3 Dots -> Copy Member ID
+# PASTE REAL SLACK MEMBER IDs HERE (Find in Slack Profile -> 3 Dots -> Copy Member ID)
 TEAM_SLACK_IDS = {
     "Kathy": "U05AS678C8Y",
     "Tony": "U057DMZKK0C",
@@ -23,6 +22,17 @@ TEAM_SLACK_IDS = {
     "Agnis": "U02BT9GEB8B",
     "Thomas": "U06CVDPFAPK"
 }
+# --- CATEGORIES (Updated with ACH & Vendor Payment) ---
+CATEGORIES = [
+    "💸 Daily Funding (12PM)",
+    "💳 ACH Request",             # <--- NEW
+    "🧾 Weekly Vendor Payment",   # <--- NEW
+    "📊 Budget and Forecast",
+    "🤝 Revenue Share",
+    "🏦 ATB Reporting",
+    "🔄 SOFR Renewal",
+    "🔐 GIC"
+]
 
 # Custom CSS
 st.markdown("""
@@ -47,12 +57,15 @@ st.markdown("""
     .urgent-card { border-top: 5px solid #e11d48; }
     .normal-card { border-top: 5px solid #6366f1; }
     div[data-testid="stMetricValue"] { font-size: 1.8rem; }
+    
+    /* Make the Archive button stand out */
+    div.stButton > button:first-child {
+        border-radius: 8px; font-weight: bold;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # --- 2. DATA SETUP ---
-
-CATEGORIES = ["💸 Daily Funding (12PM)", "📊 Budget 2026", "🤝 Revenue Share", "🏦 ATB Reporting", "🔄 SOFR Renewal", "🔐 GIC"]
 
 def get_future_date(days=0, hours=0):
     return datetime.now() + timedelta(days=days, hours=hours)
@@ -60,7 +73,7 @@ def get_future_date(days=0, hours=0):
 if 'tasks' not in st.session_state:
     st.session_state.tasks = pd.DataFrame([
         {"Task": "Approve Wire Transfers", "Category": "💸 Daily Funding (12PM)", "Assignee": TEAM[1], "Due Date": get_future_date(hours=1), "Status": False, "Urgent": True},
-        {"Task": "Q2 Variance Analysis", "Category": "📊 Budget 2026", "Assignee": TEAM[2], "Due Date": get_future_date(days=2, hours=4), "Status": False, "Urgent": False},
+        {"Task": "Process Vendor Invoices", "Category": "🧾 Weekly Vendor Payment", "Assignee": TEAM[2], "Due Date": get_future_date(days=0, hours=5), "Status": False, "Urgent": False},
         {"Task": "Submit Compliance Doc", "Category": "🏦 ATB Reporting", "Assignee": TEAM[3], "Due Date": get_future_date(days=1, hours=-2), "Status": False, "Urgent": False},
     ])
 
@@ -70,7 +83,6 @@ if 'archived' not in st.session_state:
 # --- 3. HELPER FUNCTIONS ---
 
 def send_slack_notification(task, assignee, category, due_date, urgent):
-    """Sends a formatted message to Slack with @Mentions"""
     if not SLACK_WEBHOOK_URL:
         st.warning("⚠️ Slack URL missing in Secrets.")
         return
@@ -81,10 +93,9 @@ def send_slack_notification(task, assignee, category, due_date, urgent):
         st.error("❌ 'requests' library missing.")
         return
 
-    # LOGIC: Swap Name for Slack ID tag <@ID>
-    slack_tag = assignee # Default to just text name
+    # Swap Name for Slack ID tag <@ID>
+    slack_tag = assignee 
     if assignee in TEAM_SLACK_IDS:
-        # Syntax for tagging in Slack is <@USER_ID>
         slack_tag = f"<@{TEAM_SLACK_IDS[assignee]}>"
 
     icon = "🔥" if urgent else "📋"
@@ -96,7 +107,7 @@ def send_slack_notification(task, assignee, category, due_date, urgent):
             {"type": "section", "text": {"type": "mrkdwn", "text": f"{icon} *{priority_text}*\n*{task}*"}},
             {"type": "section", "fields": [
                 {"type": "mrkdwn", "text": f"*Category:*\n{category}"},
-                {"type": "mrkdwn", "text": f"*Assignee:*\n{slack_tag}"}, # <--- Uses the @Tag now
+                {"type": "mrkdwn", "text": f"*Assignee:*\n{slack_tag}"},
                 {"type": "mrkdwn", "text": f"*Due Date:*\n{due_date.strftime('%b %d • %I:%M %p')}"}
             ]}
         ]
@@ -143,7 +154,7 @@ with st.sidebar:
         if not SLACK_WEBHOOK_URL: st.error("URL missing in Secrets")
         else:
             import requests
-            r = requests.post(SLACK_WEBHOOK_URL, json={"text": "🔔 Test: Hello Team! <@U12345678> (If you see a blue link, tagging works!)"})
+            r = requests.post(SLACK_WEBHOOK_URL, json={"text": "🔔 Test: Hello Team! (Slack Connected)"})
             if r.status_code == 200: st.success("Success!")
             else: st.error(f"Error: {r.status_code}")
                 
@@ -162,20 +173,7 @@ with st.sidebar:
             final_due_dt = datetime.combine(input_date, input_time)
             new_entry = {"Task": new_task, "Category": new_cat, "Assignee": new_assignee, "Due Date": final_due_dt, "Status": False, "Urgent": is_urgent}
             st.session_state.tasks = pd.concat([pd.DataFrame([new_entry]), st.session_state.tasks], ignore_index=True)
-            
-            # RUN SLACK NOTIFICATION
             send_slack_notification(new_task, new_assignee, new_cat, final_due_dt, is_urgent)
-            st.rerun()
-
-    # Archive Logic
-    completed_count = len(st.session_state.tasks[st.session_state.tasks["Status"] == True])
-    if completed_count > 0:
-        st.success(f"{completed_count} tasks completed!")
-        if st.button(f"📥 Archive Completed"):
-            completed = st.session_state.tasks[st.session_state.tasks["Status"] == True].copy()
-            completed["Completed At"] = datetime.now().strftime("%Y-%m-%d %H:%M")
-            st.session_state.archived = pd.concat([st.session_state.archived, completed], ignore_index=True)
-            st.session_state.tasks = st.session_state.tasks[st.session_state.tasks["Status"] == False]
             st.rerun()
 
 hours, mins, is_urgent_time = check_funding_deadline()
@@ -189,6 +187,7 @@ with col_h3:
         <span style="color: {color}; font-size: 26px; font-weight: 800; font-family: monospace;">{hours}h {mins}m</span></div>""", unsafe_allow_html=True)
 st.markdown("<br>", unsafe_allow_html=True)
 
+# --- TASK GRID ---
 active_tasks = st.session_state.tasks
 grid_cols = st.columns(3)
 for i, category in enumerate(CATEGORIES):
@@ -213,7 +212,23 @@ for i, category in enumerate(CATEGORIES):
                     <div style="margin-top:5px; text-align: right;"><a href="{gcal_link}" target="_blank" style="text-decoration:none; color: #4f46e5; font-size: 10px; font-weight: bold;">+ Add to G-Cal</a></div></div>
                 <div style="border-bottom: 1px solid #f1f5f9; margin: 8px 0;"></div>""", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
-        
+
+# --- ARCHIVE BUTTON (BOTTOM OF PAGE) ---
+st.markdown("<br><hr>", unsafe_allow_html=True)
+completed_tasks_count = len(st.session_state.tasks[st.session_state.tasks["Status"] == True])
+
+if completed_tasks_count > 0:
+    col_a, col_b = st.columns([4, 1])
+    with col_b:
+        # PRIMARY ACTION BUTTON
+        if st.button(f"📥 Archive ({completed_tasks_count}) Completed Tasks", type="primary", use_container_width=True):
+            completed = st.session_state.tasks[st.session_state.tasks["Status"] == True].copy()
+            completed["Completed At"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+            st.session_state.archived = pd.concat([st.session_state.archived, completed], ignore_index=True)
+            st.session_state.tasks = st.session_state.tasks[st.session_state.tasks["Status"] == False]
+            st.success("Tasks moved to history!")
+            st.rerun()
+
 with st.expander("📂 View Archived History"):
     st.dataframe(st.session_state.archived, use_container_width=True)
 
