@@ -6,7 +6,11 @@ from datetime import datetime, timedelta, time
 st.set_page_config(page_title="FinTrack Sync", page_icon="📈", layout="wide")
 
 # !!! PASTE YOUR SLACK WEBHOOK URL INSIDE THE QUOTES BELOW !!!
-SLACK_WEBHOOK_URL = "https://hooks.slack.com/services/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" 
+# Securely load the URL from Streamlit Secrets
+if "SLACK_WEBHOOK_URL" in st.secrets:
+    SLACK_WEBHOOK_URL = st.secrets["SLACK_WEBHOOK_URL"]
+else:
+    SLACK_WEBHOOK_URL = "https://hooks.slack.com/services/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"
 
 # Custom CSS
 st.markdown("""
