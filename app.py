@@ -5,14 +5,25 @@ from datetime import datetime, timedelta, time
 # --- 1. CONFIGURATION & STYLING ---
 st.set_page_config(page_title="FinTrack Sync", page_icon="📈", layout="wide")
 
-# --- SECURITY UPDATE: LOAD FROM SECRETS ---
-# This looks for the password in the Streamlit Vault. 
-# If not found, it stays empty.
-# --- SECURITY UPDATE: LOAD FROM SECRETS ---
+# --- SECURITY: LOAD SLACK URL ---
 if "SLACK_WEBHOOK_URL" in st.secrets:
     SLACK_WEBHOOK_URL = st.secrets["SLACK_WEBHOOK_URL"]
 else:
     SLACK_WEBHOOK_URL = "hooks.slack.com/services/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"
+
+# --- TEAM CONFIGURATION (EDIT THIS!) ---
+TEAM = ["All", "Kathy", "Tony", "Karim", "Agnis", "Thomas"]
+
+# PASTE REAL SLACK MEMBER IDs HERE
+# Find these in Slack Profile -> 3 Dots -> Copy Member ID
+TEAM_SLACK_IDS = {
+    "Kathy": "U05AS678C8Y",
+    "Tony": "U057DMZKK0C",
+    "Karim": "U07TJM3404D",
+    "Agnis": "U02BT9GEB8B",
+    "Thomas": "U06CVDPFAPK"
+}
+
 # Custom CSS
 st.markdown("""
 <style>
@@ -42,7 +53,6 @@ st.markdown("""
 # --- 2. DATA SETUP ---
 
 CATEGORIES = ["💸 Daily Funding (12PM)", "📊 Budget 2026", "🤝 Revenue Share", "🏦 ATB Reporting", "🔄 SOFR Renewal", "🔐 GIC"]
-TEAM = ["All", "Kathy", "Tony", "Karim", "Thomas", "Agnis"]
 
 def get_future_date(days=0, hours=0):
     return datetime.now() + timedelta(days=days, hours=hours)
@@ -60,42 +70,43 @@ if 'archived' not in st.session_state:
 # --- 3. HELPER FUNCTIONS ---
 
 def send_slack_notification(task, assignee, category, due_date, urgent):
-    """Sends a formatted message to Slack with ERROR REPORTING"""
+    """Sends a formatted message to Slack with @Mentions"""
     if not SLACK_WEBHOOK_URL:
-        st.warning("⚠️ Slack URL not found in Secrets. Please add it to Streamlit Settings.")
+        st.warning("⚠️ Slack URL missing in Secrets.")
         return
     
     try:
         import requests
     except ImportError:
-        st.error("❌ Error: 'requests' library not found. Did you update requirements.txt?")
+        st.error("❌ 'requests' library missing.")
         return
+
+    # LOGIC: Swap Name for Slack ID tag <@ID>
+    slack_tag = assignee # Default to just text name
+    if assignee in TEAM_SLACK_IDS:
+        # Syntax for tagging in Slack is <@USER_ID>
+        slack_tag = f"<@{TEAM_SLACK_IDS[assignee]}>"
 
     icon = "🔥" if urgent else "📋"
     priority_text = "*URGENT PRIORITY*" if urgent else "New Task"
     
     payload = {
-        "text": f"{icon} {priority_text}: {task}",
+        "text": f"{icon} {priority_text} for {slack_tag}: {task}",
         "blocks": [
             {"type": "section", "text": {"type": "mrkdwn", "text": f"{icon} *{priority_text}*\n*{task}*"}},
             {"type": "section", "fields": [
                 {"type": "mrkdwn", "text": f"*Category:*\n{category}"},
-                {"type": "mrkdwn", "text": f"*Assignee:*\n{assignee}"},
+                {"type": "mrkdwn", "text": f"*Assignee:*\n{slack_tag}"}, # <--- Uses the @Tag now
                 {"type": "mrkdwn", "text": f"*Due Date:*\n{due_date.strftime('%b %d • %I:%M %p')}"}
             ]}
         ]
     }
     
     try:
-        response = requests.post(SLACK_WEBHOOK_URL, json=payload)
-        if response.status_code == 200:
-            st.toast("Slack Notification Sent! ✅", icon="✅")
-        elif response.status_code == 404:
-            st.error(f"❌ Slack Error 404: The URL in Secrets is invalid/expired. Please generate a new one.")
-        else:
-            st.error(f"❌ Slack returned error: {response.text}") 
+        requests.post(SLACK_WEBHOOK_URL, json=payload)
+        st.toast(f"Notification sent to {assignee}!", icon="✅")
     except Exception as e:
-        st.error(f"❌ System Error: {str(e)}")
+        st.error(f"Slack Error: {str(e)}")
 
 def check_funding_deadline():
     now = datetime.now()
@@ -128,29 +139,13 @@ st.markdown(f"""
 
 with st.sidebar:
     st.subheader("🔧 Diagnostics")
-    
-    # --- DIAGNOSTIC TEST BUTTON ---
     if st.button("🔔 Test Slack Connection"):
-        if not SLACK_WEBHOOK_URL:
-             st.error("URL missing! Did you add SLACK_WEBHOOK_URL to Secrets?")
+        if not SLACK_WEBHOOK_URL: st.error("URL missing in Secrets")
         else:
-            try:
-                import requests
-                # We mask the URL to show you we found it, but not show the secret
-                masked_url = SLACK_WEBHOOK_URL[:30] + "..."
-                st.write(f"Testing URL: `{masked_url}`")
-                
-                r = requests.post(SLACK_WEBHOOK_URL, json={"text": "🔔 This is a test message from your Finance App!"})
-                if r.status_code == 200:
-                    st.success("Success! Check your Slack Channel now.")
-                elif r.status_code == 404:
-                    st.error("Error 404: The URL in secrets is dead/revoked. Generate a new one!")
-                else:
-                    st.error(f"Failed. Slack Error Code: {r.status_code}")
-            except ImportError:
-                st.error("Library 'requests' missing. Check requirements.txt")
-            except Exception as e:
-                st.error(f"Connection Error: {e}")
+            import requests
+            r = requests.post(SLACK_WEBHOOK_URL, json={"text": "🔔 Test: Hello Team! <@U12345678> (If you see a blue link, tagging works!)"})
+            if r.status_code == 200: st.success("Success!")
+            else: st.error(f"Error: {r.status_code}")
                 
     st.divider()
     st.subheader("➕ New Activity")
