@@ -1,9 +1,14 @@
 import streamlit as st
 import pandas as pd
+import requests
 from datetime import datetime, timedelta, time
 
 # --- 1. CONFIGURATION & STYLING ---
 st.set_page_config(page_title="FinTrack Sync", page_icon="📈", layout="wide")
+
+# !!! PASTE YOUR SLACK WEBHOOK URL INSIDE THE QUOTES BELOW !!!
+# Example: "https://hooks.slack.com/services/T000/B000/XXXX"
+SLACK_WEBHOOK_URL = "https://hooks.slack.com/services/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" 
 
 # Custom CSS
 st.markdown("""
@@ -57,20 +62,18 @@ CATEGORIES = [
     "🔐 GIC"
 ]
 
-TEAM = ["All", "Kathy", "Tony", "Agnis", "Thomas", "Karim"]
+TEAM = ["All", "Jason", "Amanda", "Raj", "Finance Lead"]
 
-# Helper to create mock dates relative to "now" so the app always looks fresh
 def get_future_date(days=0, hours=0):
     return datetime.now() + timedelta(days=days, hours=hours)
 
-# Initialize Session State
 if 'tasks' not in st.session_state:
     st.session_state.tasks = pd.DataFrame([
         {
             "Task": "Approve Wire Transfers", 
             "Category": "💸 Daily Funding (12PM)", 
             "Assignee": TEAM[1], 
-            "Due Date": get_future_date(hours=1), # Due in 1 hour
+            "Due Date": get_future_date(hours=1), 
             "Status": False, 
             "Urgent": True
         },
@@ -78,7 +81,7 @@ if 'tasks' not in st.session_state:
             "Task": "Q2 Variance Analysis", 
             "Category": "📊 Budget 2026", 
             "Assignee": TEAM[2], 
-            "Due Date": get_future_date(days=2, hours=4), # Due in 2 days
+            "Due Date": get_future_date(days=2, hours=4), 
             "Status": False, 
             "Urgent": False
         },
@@ -86,7 +89,7 @@ if 'tasks' not in st.session_state:
             "Task": "Submit Compliance Doc", 
             "Category": "🏦 ATB Reporting", 
             "Assignee": TEAM[3], 
-            "Due Date": get_future_date(days=1, hours=-2), # Due tomorrow
+            "Due Date": get_future_date(days=1, hours=-2), 
             "Status": False, 
             "Urgent": False
         },
@@ -96,6 +99,39 @@ if 'archived' not in st.session_state:
     st.session_state.archived = pd.DataFrame(columns=["Task", "Category", "Assignee", "Due Date", "Status", "Urgent", "Completed At"])
 
 # --- 3. HELPER FUNCTIONS ---
+
+def send_slack_notification(task, assignee, category, due_date, urgent):
+    """Sends a formatted message to Slack"""
+    if not SLACK_WEBHOOK_URL:
+        return # Do nothing if no URL is set
+    
+    icon = "🔥" if urgent else "📋"
+    priority_text = "*URGENT PRIORITY*" if urgent else "New Task"
+    
+    payload = {
+        "text": f"{icon} {priority_text}: {task}",
+        "blocks": [
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"{icon} *{priority_text}*\n*{task}*"
+                }
+            },
+            {
+                "type": "section",
+                "fields": [
+                    {"type": "mrkdwn", "text": f"*Category:*\n{category}"},
+                    {"type": "mrkdwn", "text": f"*Assignee:*\n{assignee}"},
+                    {"type": "mrkdwn", "text": f"*Due Date:*\n{due_date.strftime('%b %d • %I:%M %p')}"}
+                ]
+            }
+        ]
+    }
+    try:
+        requests.post(SLACK_WEBHOOK_URL, json=payload)
+    except:
+        pass # Ignore errors to prevent app crashing
 
 def check_funding_deadline():
     now = datetime.now()
@@ -109,7 +145,6 @@ def check_funding_deadline():
 
 def generate_gcal_link(title, due_datetime):
     base = "https://calendar.google.com/calendar/render?action=TEMPLATE"
-    # Format: YYYYMMDDTHHMMSSZ
     start = due_datetime.strftime("%Y%m%dT%H%M%S")
     end = (due_datetime + timedelta(hours=1)).strftime("%Y%m%dT%H%M%S")
     return f"{base}&text={title.replace(' ', '+')}&dates={start}/{end}"
@@ -117,9 +152,8 @@ def generate_gcal_link(title, due_datetime):
 def toggle_status(index):
     st.session_state.tasks.at[index, 'Status'] = not st.session_state.tasks.at[index, 'Status']
 
-# --- 4. NEW BANNER SECTION ---
+# --- 4. BANNER ---
 today_str = datetime.now().strftime("%A, %B %d, %Y")
-
 st.markdown(f"""
 <div class="finance-banner">
     <div style="display: flex; align-items: center; gap: 20px;">
@@ -144,7 +178,6 @@ with st.sidebar:
         new_cat = st.selectbox("Category", CATEGORIES)
         new_assignee = st.selectbox("Assignee", TEAM[1:])
         
-        # New: Split Date and Time Inputs
         c_date, c_time = st.columns(2)
         input_date = c_date.date_input("Due Date", value=datetime.now())
         input_time = c_time.time_input("Due Time", value=time(12, 00))
@@ -152,7 +185,6 @@ with st.sidebar:
         is_urgent = st.checkbox("Urgent Priority")
         
         if st.form_submit_button("Add Task"):
-            # Combine Date and Time
             final_due_dt = datetime.combine(input_date, input_time)
             
             new_entry = {
@@ -161,6 +193,14 @@ with st.sidebar:
                 "Status": False, "Urgent": is_urgent
             }
             st.session_state.tasks = pd.concat([pd.DataFrame([new_entry]), st.session_state.tasks], ignore_index=True)
+            
+            # --- SEND SLACK NOTIFICATION ---
+            if SLACK_WEBHOOK_URL:
+                send_slack_notification(new_task, new_assignee, new_cat, final_due_dt, is_urgent)
+                st.toast("Task added & Slack notification sent!", icon="✅")
+            else:
+                st.toast("Task added (Slack not configured)", icon="⚠️")
+                
             st.rerun()
             
     st.divider()
@@ -178,7 +218,6 @@ with st.sidebar:
 
 # --- 6. METRICS & GRID VIEW ---
 
-# Header Stats
 hours, mins, is_urgent_time = check_funding_deadline()
 col_h1, col_h2, col_h3 = st.columns(3)
 
@@ -187,7 +226,6 @@ with col_h1:
 with col_h2:
     st.metric("Completed Today", len(st.session_state.archived[st.session_state.archived["Completed At"].str.startswith(datetime.now().strftime("%Y-%m-%d"))]))
 with col_h3:
-    # Custom Funding Timer
     color = "#e11d48" if is_urgent_time else "#4f46e5"
     st.markdown(f"""
     <div style="background: white; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0; text-align: center; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
@@ -198,7 +236,6 @@ with col_h3:
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# Grid Layout
 active_tasks = st.session_state.tasks
 grid_cols = st.columns(3)
 
@@ -208,7 +245,6 @@ for i, category in enumerate(CATEGORIES):
         cat_tasks = active_tasks[active_tasks["Category"] == category]
         card_type = "urgent-card" if "Daily Funding" in category else "normal-card"
         
-        # Card Header
         st.markdown(f"""<div class="category-card {card_type}">
             <h3 style="font-size: 16px; margin-bottom: 15px; font-weight: 600;">{category}</h3>""", unsafe_allow_html=True)
         
@@ -217,17 +253,11 @@ for i, category in enumerate(CATEGORIES):
         else:
             for idx, row in cat_tasks.iterrows():
                 c1, c2 = st.columns([0.15, 0.85])
-                
-                # Checkbox
                 done = c1.checkbox("", value=row["Status"], key=f"check_{idx}", on_change=toggle_status, args=(idx,))
                 
-                # Format Date nicely (e.g. "Nov 25, 2025 • 11:30 AM")
                 due_dt_str = row['Due Date'].strftime('%b %d, %Y • %I:%M %p')
-                
-                # Google Calendar Link
                 gcal_link = generate_gcal_link(row['Task'], row['Due Date'])
                 
-                # Text Content
                 task_style = "text-decoration: line-through; color: #94a3b8;" if row["Status"] else "font-weight: 500; color: #334155;"
                 urgent_badge = "<span style='background:#fee2e2; color:#ef4444; font-size:10px; padding:2px 6px; border-radius:4px;'>URGENT</span>" if row["Urgent"] else ""
                 
@@ -249,3 +279,5 @@ for i, category in enumerate(CATEGORIES):
 
 with st.expander("📂 View Archived History"):
     st.dataframe(st.session_state.archived, use_container_width=True)
+
+
