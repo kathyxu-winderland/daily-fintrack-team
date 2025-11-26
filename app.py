@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta, time
+import requests # Imported at top level for safety
 
 # --- 1. CONFIGURATION & STYLING ---
 st.set_page_config(page_title="FinTrack Sync", page_icon="📈", layout="wide")
@@ -14,7 +15,7 @@ else:
 # --- TEAM CONFIGURATION ---
 TEAM = ["All", "Kathy", "Tony", "Karim", "Agnis", "Thomas"]
 
-# PASTE REAL SLACK MEMBER IDs HERE (Find in Slack Profile -> 3 Dots -> Copy Member ID)
+# PASTE REAL SLACK MEMBER IDs HERE
 TEAM_SLACK_IDS = {
     "Kathy": "U05AS678C8Y",
     "Tony": "U057DMZKK0C",
@@ -22,12 +23,13 @@ TEAM_SLACK_IDS = {
     "Agnis": "U02BT9GEB8B",
     "Thomas": "U06CVDPFAPK"
 }
-# --- CATEGORIES (Updated with ACH & Vendor Payment) ---
+
+# --- CATEGORIES ---
 CATEGORIES = [
     "💸 Daily Funding (12PM)",
-    "💳 ACH Request",             # <--- NEW
-    "🧾 Weekly Vendor Payment",   # <--- NEW
-    "📊 Budget and Forecast",
+    "💳 ACH Request",
+    "🧾 Weekly Vendor Payment",
+    "📊 Budget & Forecast",
     "🤝 Revenue Share",
     "🏦 ATB Reporting",
     "🔄 SOFR Renewal",
@@ -82,22 +84,17 @@ if 'archived' not in st.session_state:
 
 # --- 3. HELPER FUNCTIONS ---
 
+def get_slack_tag(name):
+    """Helper to convert name to Slack ID tag"""
+    if name in TEAM_SLACK_IDS:
+        return f"<@{TEAM_SLACK_IDS[name]}>"
+    return name
+
 def send_slack_notification(task, assignee, category, due_date, urgent):
-    if not SLACK_WEBHOOK_URL:
-        st.warning("⚠️ Slack URL missing in Secrets.")
-        return
+    """Sends NEW TASK notification"""
+    if not SLACK_WEBHOOK_URL: return
     
-    try:
-        import requests
-    except ImportError:
-        st.error("❌ 'requests' library missing.")
-        return
-
-    # Swap Name for Slack ID tag <@ID>
-    slack_tag = assignee 
-    if assignee in TEAM_SLACK_IDS:
-        slack_tag = f"<@{TEAM_SLACK_IDS[assignee]}>"
-
+    slack_tag = get_slack_tag(assignee)
     icon = "🔥" if urgent else "📋"
     priority_text = "*URGENT PRIORITY*" if urgent else "New Task"
     
@@ -112,12 +109,36 @@ def send_slack_notification(task, assignee, category, due_date, urgent):
             ]}
         ]
     }
+    try: requests.post(SLACK_WEBHOOK_URL, json=payload)
+    except: pass
+
+def send_slack_completion_notification(task, assignee, category):
+    """Sends COMPLETED TASK notification"""
+    if not SLACK_WEBHOOK_URL: return
+
+    slack_tag = get_slack_tag(assignee)
     
-    try:
-        requests.post(SLACK_WEBHOOK_URL, json=payload)
-        st.toast(f"Notification sent to {assignee}!", icon="✅")
-    except Exception as e:
-        st.error(f"Slack Error: {str(e)}")
+    payload = {
+        "text": f"✅ Task Completed: {task}",
+        "blocks": [
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"✅ *Task Completed*\n*{task}*"
+                }
+            },
+            {
+                "type": "section",
+                "fields": [
+                    {"type": "mrkdwn", "text": f"*Completed By:*\n{slack_tag}"},
+                    {"type": "mrkdwn", "text": f"*Category:*\n{category}"}
+                ]
+            }
+        ]
+    }
+    try: requests.post(SLACK_WEBHOOK_URL, json=payload)
+    except: pass
 
 def check_funding_deadline():
     now = datetime.now()
@@ -153,8 +174,7 @@ with st.sidebar:
     if st.button("🔔 Test Slack Connection"):
         if not SLACK_WEBHOOK_URL: st.error("URL missing in Secrets")
         else:
-            import requests
-            r = requests.post(SLACK_WEBHOOK_URL, json={"text": "🔔 Test: Hello Team! (Slack Connected)"})
+            r = requests.post(SLACK_WEBHOOK_URL, json={"text": "🔔 Test: Connection working!"})
             if r.status_code == 200: st.success("Success!")
             else: st.error(f"Error: {r.status_code}")
                 
@@ -215,18 +235,28 @@ for i, category in enumerate(CATEGORIES):
 
 # --- ARCHIVE BUTTON (BOTTOM OF PAGE) ---
 st.markdown("<br><hr>", unsafe_allow_html=True)
-completed_tasks_count = len(st.session_state.tasks[st.session_state.tasks["Status"] == True])
+completed_tasks = st.session_state.tasks[st.session_state.tasks["Status"] == True]
+completed_tasks_count = len(completed_tasks)
 
 if completed_tasks_count > 0:
     col_a, col_b = st.columns([4, 1])
     with col_b:
         # PRIMARY ACTION BUTTON
         if st.button(f"📥 Archive ({completed_tasks_count}) Completed Tasks", type="primary", use_container_width=True):
-            completed = st.session_state.tasks[st.session_state.tasks["Status"] == True].copy()
-            completed["Completed At"] = datetime.now().strftime("%Y-%m-%d %H:%M")
-            st.session_state.archived = pd.concat([st.session_state.archived, completed], ignore_index=True)
+            
+            # 1. SEND SLACK NOTIFICATIONS FOR EACH COMPLETED TASK
+            for index, row in completed_tasks.iterrows():
+                send_slack_completion_notification(row['Task'], row['Assignee'], row['Category'])
+            
+            # 2. MOVE TO ARCHIVE
+            to_archive = completed_tasks.copy()
+            to_archive["Completed At"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+            st.session_state.archived = pd.concat([st.session_state.archived, to_archive], ignore_index=True)
+            
+            # 3. REMOVE FROM ACTIVE
             st.session_state.tasks = st.session_state.tasks[st.session_state.tasks["Status"] == False]
-            st.success("Tasks moved to history!")
+            
+            st.success("Tasks archived & Slack notifications sent!")
             st.rerun()
 
 with st.expander("📂 View Archived History"):
