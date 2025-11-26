@@ -28,7 +28,6 @@ st.markdown("""
         border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
         margin-bottom: 20px; transition: transform 0.2s;
     }
-    .category-card:hover { transform: translateY(-2px); }
     .urgent-card { border-top: 5px solid #e11d48; }
     .normal-card { border-top: 5px solid #6366f1; }
     div[data-testid="stMetricValue"] { font-size: 1.8rem; }
@@ -38,7 +37,7 @@ st.markdown("""
 # --- 2. DATA SETUP ---
 
 CATEGORIES = ["💸 Daily Funding (12PM)", "📊 Budget 2026", "🤝 Revenue Share", "🏦 ATB Reporting", "🔄 SOFR Renewal", "🔐 GIC"]
-TEAM = ["All", "Kathy", "Tony", "Angis", "Thomas", "Karim"]
+TEAM = ["All", "Jason", "Amanda", "Raj", "Finance Lead"]
 
 def get_future_date(days=0, hours=0):
     return datetime.now() + timedelta(days=days, hours=hours)
@@ -57,17 +56,14 @@ if 'archived' not in st.session_state:
 
 def send_slack_notification(task, assignee, category, due_date, urgent):
     """Sends a formatted message to Slack with ERROR REPORTING"""
-    
-    # 1. Check if URL is present
     if not SLACK_WEBHOOK_URL:
-        st.warning("⚠️ Slack URL is missing in Line 12 of app.py")
+        st.warning("⚠️ Slack URL is missing in Line 12. Notification not sent.")
         return
     
-    # 2. Try to Import Requests (Checks requirements.txt)
     try:
         import requests
     except ImportError:
-        st.error("❌ Error: 'requests' library not found. Please add 'requests' to your requirements.txt file.")
+        st.error("❌ Error: 'requests' library not found. Did you update requirements.txt?")
         return
 
     icon = "🔥" if urgent else "📋"
@@ -85,18 +81,14 @@ def send_slack_notification(task, assignee, category, due_date, urgent):
         ]
     }
     
-    # 3. Try to Send and Catch Connection Errors
     try:
         response = requests.post(SLACK_WEBHOOK_URL, json=payload)
         if response.status_code == 200:
             st.toast("Slack Notification Sent! ✅", icon="✅")
         elif response.status_code == 404:
-            st.error(f"❌ Slack Error 404: The Webhook URL is invalid. Check Line 12.")
-        elif response.status_code == 403:
-            st.error(f"❌ Slack Error 403: Permission denied. Check your Slack App settings.")
+            st.error(f"❌ Slack Error 404: Invalid URL. Check Line 12.")
         else:
-            st.error(f"❌ Slack returned error code: {response.status_code}. Response: {response.text}")
-            
+            st.error(f"❌ Slack returned error: {response.text}") 
     except Exception as e:
         st.error(f"❌ System Error: {str(e)}")
 
@@ -130,6 +122,26 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 with st.sidebar:
+    st.subheader("🔧 Diagnostics")
+    
+    # --- DIAGNOSTIC TEST BUTTON ---
+    if st.button("🔔 Test Slack Connection"):
+        if not SLACK_WEBHOOK_URL:
+             st.error("No URL in Line 12.")
+        else:
+            try:
+                import requests
+                r = requests.post(SLACK_WEBHOOK_URL, json={"text": "🔔 This is a test message from your Finance App!"})
+                if r.status_code == 200:
+                    st.success("Success! Check your Slack Channel now.")
+                else:
+                    st.error(f"Failed. Slack Error Code: {r.status_code}")
+            except ImportError:
+                st.error("Library 'requests' missing. Check requirements.txt")
+            except Exception as e:
+                st.error(f"Connection Error: {e}")
+                
+    st.divider()
     st.subheader("➕ New Activity")
     with st.form("add_task_form", clear_on_submit=True):
         new_task = st.text_input("Task Name")
