@@ -5,13 +5,14 @@ from datetime import datetime, timedelta, time
 # --- 1. CONFIGURATION & STYLING ---
 st.set_page_config(page_title="FinTrack Sync", page_icon="📈", layout="wide")
 
-# !!! PASTE YOUR SLACK WEBHOOK URL INSIDE THE QUOTES BELOW !!!
-# Securely load the URL from Streamlit Secrets
+# --- SECURITY UPDATE: LOAD FROM SECRETS ---
+# This looks for the password in the Streamlit Vault. 
+# If not found, it stays empty.
+# --- SECURITY UPDATE: LOAD FROM SECRETS ---
 if "SLACK_WEBHOOK_URL" in st.secrets:
     SLACK_WEBHOOK_URL = st.secrets["SLACK_WEBHOOK_URL"]
 else:
-    SLACK_WEBHOOK_URL = "https://hooks.slack.com/services/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"
-
+    SLACK_WEBHOOK_URL = "hooks.slack.com/services/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"
 # Custom CSS
 st.markdown("""
 <style>
@@ -41,7 +42,7 @@ st.markdown("""
 # --- 2. DATA SETUP ---
 
 CATEGORIES = ["💸 Daily Funding (12PM)", "📊 Budget 2026", "🤝 Revenue Share", "🏦 ATB Reporting", "🔄 SOFR Renewal", "🔐 GIC"]
-TEAM = ["All", "Jason", "Amanda", "Raj", "Finance Lead"]
+TEAM = ["All", "Kathy", "Tony", "Karim", "Thomas", "Agnis"]
 
 def get_future_date(days=0, hours=0):
     return datetime.now() + timedelta(days=days, hours=hours)
@@ -61,7 +62,7 @@ if 'archived' not in st.session_state:
 def send_slack_notification(task, assignee, category, due_date, urgent):
     """Sends a formatted message to Slack with ERROR REPORTING"""
     if not SLACK_WEBHOOK_URL:
-        st.warning("⚠️ Slack URL is missing in Line 12. Notification not sent.")
+        st.warning("⚠️ Slack URL not found in Secrets. Please add it to Streamlit Settings.")
         return
     
     try:
@@ -90,7 +91,7 @@ def send_slack_notification(task, assignee, category, due_date, urgent):
         if response.status_code == 200:
             st.toast("Slack Notification Sent! ✅", icon="✅")
         elif response.status_code == 404:
-            st.error(f"❌ Slack Error 404: Invalid URL. Check Line 12.")
+            st.error(f"❌ Slack Error 404: The URL in Secrets is invalid/expired. Please generate a new one.")
         else:
             st.error(f"❌ Slack returned error: {response.text}") 
     except Exception as e:
@@ -131,13 +132,19 @@ with st.sidebar:
     # --- DIAGNOSTIC TEST BUTTON ---
     if st.button("🔔 Test Slack Connection"):
         if not SLACK_WEBHOOK_URL:
-             st.error("No URL in Line 12.")
+             st.error("URL missing! Did you add SLACK_WEBHOOK_URL to Secrets?")
         else:
             try:
                 import requests
+                # We mask the URL to show you we found it, but not show the secret
+                masked_url = SLACK_WEBHOOK_URL[:30] + "..."
+                st.write(f"Testing URL: `{masked_url}`")
+                
                 r = requests.post(SLACK_WEBHOOK_URL, json={"text": "🔔 This is a test message from your Finance App!"})
                 if r.status_code == 200:
                     st.success("Success! Check your Slack Channel now.")
+                elif r.status_code == 404:
+                    st.error("Error 404: The URL in secrets is dead/revoked. Generate a new one!")
                 else:
                     st.error(f"Failed. Slack Error Code: {r.status_code}")
             except ImportError:
