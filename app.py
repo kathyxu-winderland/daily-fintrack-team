@@ -1,22 +1,18 @@
 import streamlit as st
 import pandas as pd
-import requests
 from datetime import datetime, timedelta, time
 
 # --- 1. CONFIGURATION & STYLING ---
 st.set_page_config(page_title="FinTrack Sync", page_icon="📈", layout="wide")
 
 # !!! PASTE YOUR SLACK WEBHOOK URL INSIDE THE QUOTES BELOW !!!
-# Example: "https://hooks.slack.com/services/T000/B000/XXXX"
-SLACK_WEBHOOK_URL = "https://hooks.slack.com/services/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" 
+SLACK_WEBHOOK_URL = "" 
 
 # Custom CSS
 st.markdown("""
 <style>
     .main { background-color: #f8fafc; }
     h1, h2, h3, p { font-family: 'Inter', sans-serif; }
-    
-    /* BANNER STYLE */
     .finance-banner {
         background: linear-gradient(135deg, #4f46e5 0%, #06b6d4 100%);
         padding: 2rem;
@@ -24,44 +20,24 @@ st.markdown("""
         color: white;
         margin-bottom: 30px;
         box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
+        display: flex; align-items: center; justify-content: space-between;
     }
-    
-    /* Card Styling */
     div[data-testid="column"] { background-color: transparent; }
-    
     .category-card {
-        background-color: white;
-        padding: 20px;
-        border-radius: 12px;
-        border: 1px solid #e2e8f0;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-        margin-bottom: 20px;
-        transition: transform 0.2s;
+        background-color: white; padding: 20px; border-radius: 12px;
+        border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+        margin-bottom: 20px; transition: transform 0.2s;
     }
     .category-card:hover { transform: translateY(-2px); }
-    
     .urgent-card { border-top: 5px solid #e11d48; }
     .normal-card { border-top: 5px solid #6366f1; }
-
-    /* Metric Styling */
     div[data-testid="stMetricValue"] { font-size: 1.8rem; }
 </style>
 """, unsafe_allow_html=True)
 
 # --- 2. DATA SETUP ---
 
-CATEGORIES = [
-    "💸 Daily Funding (12PM)",
-    "📊 Budget 2026",
-    "🤝 Revenue Share",
-    "🏦 ATB Reporting",
-    "🔄 SOFR Renewal",
-    "🔐 GIC"
-]
-
+CATEGORIES = ["💸 Daily Funding (12PM)", "📊 Budget 2026", "🤝 Revenue Share", "🏦 ATB Reporting", "🔄 SOFR Renewal", "🔐 GIC"]
 TEAM = ["All", "Jason", "Amanda", "Raj", "Finance Lead"]
 
 def get_future_date(days=0, hours=0):
@@ -69,30 +45,9 @@ def get_future_date(days=0, hours=0):
 
 if 'tasks' not in st.session_state:
     st.session_state.tasks = pd.DataFrame([
-        {
-            "Task": "Approve Wire Transfers", 
-            "Category": "💸 Daily Funding (12PM)", 
-            "Assignee": TEAM[1], 
-            "Due Date": get_future_date(hours=1), 
-            "Status": False, 
-            "Urgent": True
-        },
-        {
-            "Task": "Q2 Variance Analysis", 
-            "Category": "📊 Budget 2026", 
-            "Assignee": TEAM[2], 
-            "Due Date": get_future_date(days=2, hours=4), 
-            "Status": False, 
-            "Urgent": False
-        },
-        {
-            "Task": "Submit Compliance Doc", 
-            "Category": "🏦 ATB Reporting", 
-            "Assignee": TEAM[3], 
-            "Due Date": get_future_date(days=1, hours=-2), 
-            "Status": False, 
-            "Urgent": False
-        },
+        {"Task": "Approve Wire Transfers", "Category": "💸 Daily Funding (12PM)", "Assignee": TEAM[1], "Due Date": get_future_date(hours=1), "Status": False, "Urgent": True},
+        {"Task": "Q2 Variance Analysis", "Category": "📊 Budget 2026", "Assignee": TEAM[2], "Due Date": get_future_date(days=2, hours=4), "Status": False, "Urgent": False},
+        {"Task": "Submit Compliance Doc", "Category": "🏦 ATB Reporting", "Assignee": TEAM[3], "Due Date": get_future_date(days=1, hours=-2), "Status": False, "Urgent": False},
     ])
 
 if 'archived' not in st.session_state:
@@ -101,47 +56,56 @@ if 'archived' not in st.session_state:
 # --- 3. HELPER FUNCTIONS ---
 
 def send_slack_notification(task, assignee, category, due_date, urgent):
-    """Sends a formatted message to Slack"""
-    if not SLACK_WEBHOOK_URL:
-        return # Do nothing if no URL is set
+    """Sends a formatted message to Slack with ERROR REPORTING"""
     
+    # 1. Check if URL is present
+    if not SLACK_WEBHOOK_URL:
+        st.warning("⚠️ Slack URL is missing in Line 12 of app.py")
+        return
+    
+    # 2. Try to Import Requests (Checks requirements.txt)
+    try:
+        import requests
+    except ImportError:
+        st.error("❌ Error: 'requests' library not found. Please add 'requests' to your requirements.txt file.")
+        return
+
     icon = "🔥" if urgent else "📋"
     priority_text = "*URGENT PRIORITY*" if urgent else "New Task"
     
     payload = {
         "text": f"{icon} {priority_text}: {task}",
         "blocks": [
-            {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": f"{icon} *{priority_text}*\n*{task}*"
-                }
-            },
-            {
-                "type": "section",
-                "fields": [
-                    {"type": "mrkdwn", "text": f"*Category:*\n{category}"},
-                    {"type": "mrkdwn", "text": f"*Assignee:*\n{assignee}"},
-                    {"type": "mrkdwn", "text": f"*Due Date:*\n{due_date.strftime('%b %d • %I:%M %p')}"}
-                ]
-            }
+            {"type": "section", "text": {"type": "mrkdwn", "text": f"{icon} *{priority_text}*\n*{task}*"}},
+            {"type": "section", "fields": [
+                {"type": "mrkdwn", "text": f"*Category:*\n{category}"},
+                {"type": "mrkdwn", "text": f"*Assignee:*\n{assignee}"},
+                {"type": "mrkdwn", "text": f"*Due Date:*\n{due_date.strftime('%b %d • %I:%M %p')}"}
+            ]}
         ]
     }
+    
+    # 3. Try to Send and Catch Connection Errors
     try:
-        requests.post(SLACK_WEBHOOK_URL, json=payload)
-    except:
-        pass # Ignore errors to prevent app crashing
+        response = requests.post(SLACK_WEBHOOK_URL, json=payload)
+        if response.status_code == 200:
+            st.toast("Slack Notification Sent! ✅", icon="✅")
+        elif response.status_code == 404:
+            st.error(f"❌ Slack Error 404: The Webhook URL is invalid. Check Line 12.")
+        elif response.status_code == 403:
+            st.error(f"❌ Slack Error 403: Permission denied. Check your Slack App settings.")
+        else:
+            st.error(f"❌ Slack returned error code: {response.status_code}. Response: {response.text}")
+            
+    except Exception as e:
+        st.error(f"❌ System Error: {str(e)}")
 
 def check_funding_deadline():
     now = datetime.now()
     deadline = now.replace(hour=12, minute=0, second=0, microsecond=0)
-    if now > deadline:
-        deadline = deadline + timedelta(days=1)
+    if now > deadline: deadline += timedelta(days=1)
     time_left = deadline - now
-    hours = int(time_left.total_seconds() // 3600)
-    mins = int((time_left.total_seconds() % 3600) // 60)
-    return hours, mins, time_left.total_seconds() < 3600
+    return int(time_left.total_seconds() // 3600), int((time_left.total_seconds() % 3600) // 60), time_left.total_seconds() < 3600
 
 def generate_gcal_link(title, due_datetime):
     base = "https://calendar.google.com/calendar/render?action=TEMPLATE"
@@ -152,59 +116,39 @@ def generate_gcal_link(title, due_datetime):
 def toggle_status(index):
     st.session_state.tasks.at[index, 'Status'] = not st.session_state.tasks.at[index, 'Status']
 
-# --- 4. BANNER ---
+# --- 4. UI STRUCTURE ---
 today_str = datetime.now().strftime("%A, %B %d, %Y")
 st.markdown(f"""
 <div class="finance-banner">
     <div style="display: flex; align-items: center; gap: 20px;">
         <span style="font-size: 50px; background: rgba(255,255,255,0.2); padding: 10px; border-radius: 50%;">👨‍💼👩‍💼</span>
-        <div>
-            <h1 style="color: white; margin: 0; font-size: 28px; font-weight: 700;">Finance Operations Team</h1>
-            <p style="color: #e0e7ff; margin: 0; font-size: 16px; opacity: 0.9;">Daily Task Manager & Tracking</p>
-        </div>
+        <div><h1 style="color: white; margin: 0; font-size: 28px; font-weight: 700;">Finance Operations Team</h1>
+        <p style="color: #e0e7ff; margin: 0; font-size: 16px; opacity: 0.9;">Daily Task Manager & Tracking</p></div>
     </div>
-    <div style="text-align: right;">
-        <div style="font-size: 22px; font-weight: bold; color: white;">{today_str}</div>
-        <div style="font-size: 14px; color: #cffafe;">Ready for the day 🚀</div>
-    </div>
+    <div style="text-align: right;"><div style="font-size: 22px; font-weight: bold; color: white;">{today_str}</div></div>
 </div>
 """, unsafe_allow_html=True)
 
-# --- 5. SIDEBAR ---
 with st.sidebar:
     st.subheader("➕ New Activity")
     with st.form("add_task_form", clear_on_submit=True):
         new_task = st.text_input("Task Name")
         new_cat = st.selectbox("Category", CATEGORIES)
         new_assignee = st.selectbox("Assignee", TEAM[1:])
-        
         c_date, c_time = st.columns(2)
         input_date = c_date.date_input("Due Date", value=datetime.now())
         input_time = c_time.time_input("Due Time", value=time(12, 00))
-        
         is_urgent = st.checkbox("Urgent Priority")
         
         if st.form_submit_button("Add Task"):
             final_due_dt = datetime.combine(input_date, input_time)
-            
-            new_entry = {
-                "Task": new_task, "Category": new_cat, 
-                "Assignee": new_assignee, "Due Date": final_due_dt, 
-                "Status": False, "Urgent": is_urgent
-            }
+            new_entry = {"Task": new_task, "Category": new_cat, "Assignee": new_assignee, "Due Date": final_due_dt, "Status": False, "Urgent": is_urgent}
             st.session_state.tasks = pd.concat([pd.DataFrame([new_entry]), st.session_state.tasks], ignore_index=True)
             
-            # --- SEND SLACK NOTIFICATION ---
-            if SLACK_WEBHOOK_URL:
-                send_slack_notification(new_task, new_assignee, new_cat, final_due_dt, is_urgent)
-                st.toast("Task added & Slack notification sent!", icon="✅")
-            else:
-                st.toast("Task added (Slack not configured)", icon="⚠️")
-                
+            # RUN SLACK NOTIFICATION
+            send_slack_notification(new_task, new_assignee, new_cat, final_due_dt, is_urgent)
             st.rerun()
-            
-    st.divider()
-    
+
     # Archive Logic
     completed_count = len(st.session_state.tasks[st.session_state.tasks["Status"] == True])
     if completed_count > 0:
@@ -216,67 +160,42 @@ with st.sidebar:
             st.session_state.tasks = st.session_state.tasks[st.session_state.tasks["Status"] == False]
             st.rerun()
 
-# --- 6. METRICS & GRID VIEW ---
-
 hours, mins, is_urgent_time = check_funding_deadline()
 col_h1, col_h2, col_h3 = st.columns(3)
-
-with col_h1:
-    st.metric("Pending Tasks", len(st.session_state.tasks[st.session_state.tasks["Status"] == False]))
-with col_h2:
-    st.metric("Completed Today", len(st.session_state.archived[st.session_state.archived["Completed At"].str.startswith(datetime.now().strftime("%Y-%m-%d"))]))
+with col_h1: st.metric("Pending Tasks", len(st.session_state.tasks[st.session_state.tasks["Status"] == False]))
+with col_h2: st.metric("Completed Today", len(st.session_state.archived[st.session_state.archived["Completed At"].str.startswith(datetime.now().strftime("%Y-%m-%d"))]))
 with col_h3:
     color = "#e11d48" if is_urgent_time else "#4f46e5"
-    st.markdown(f"""
-    <div style="background: white; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0; text-align: center; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+    st.markdown(f"""<div style="background: white; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0; text-align: center; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
         <span style="color: #64748b; font-size: 11px; font-weight: bold; letter-spacing: 1px;">DAILY FUNDING CUTOFF</span><br>
-        <span style="color: {color}; font-size: 26px; font-weight: 800; font-family: monospace;">{hours}h {mins}m</span>
-    </div>
-    """, unsafe_allow_html=True)
-
+        <span style="color: {color}; font-size: 26px; font-weight: 800; font-family: monospace;">{hours}h {mins}m</span></div>""", unsafe_allow_html=True)
 st.markdown("<br>", unsafe_allow_html=True)
 
 active_tasks = st.session_state.tasks
 grid_cols = st.columns(3)
-
 for i, category in enumerate(CATEGORIES):
     col_idx = i % 3
     with grid_cols[col_idx]:
         cat_tasks = active_tasks[active_tasks["Category"] == category]
         card_type = "urgent-card" if "Daily Funding" in category else "normal-card"
-        
-        st.markdown(f"""<div class="category-card {card_type}">
-            <h3 style="font-size: 16px; margin-bottom: 15px; font-weight: 600;">{category}</h3>""", unsafe_allow_html=True)
-        
+        st.markdown(f"""<div class="category-card {card_type}"><h3 style="font-size: 16px; margin-bottom: 15px; font-weight: 600;">{category}</h3>""", unsafe_allow_html=True)
         if cat_tasks.empty:
             st.markdown("<div style='color: #cbd5e1; text-align: center; padding: 10px;'>No active tasks</div>", unsafe_allow_html=True)
         else:
             for idx, row in cat_tasks.iterrows():
                 c1, c2 = st.columns([0.15, 0.85])
                 done = c1.checkbox("", value=row["Status"], key=f"check_{idx}", on_change=toggle_status, args=(idx,))
-                
-                due_dt_str = row['Due Date'].strftime('%b %d, %Y • %I:%M %p')
+                due_dt_str = row['Due Date'].strftime('%b %d • %I:%M %p')
                 gcal_link = generate_gcal_link(row['Task'], row['Due Date'])
-                
                 task_style = "text-decoration: line-through; color: #94a3b8;" if row["Status"] else "font-weight: 500; color: #334155;"
                 urgent_badge = "<span style='background:#fee2e2; color:#ef4444; font-size:10px; padding:2px 6px; border-radius:4px;'>URGENT</span>" if row["Urgent"] else ""
-                
-                c2.markdown(f"""
-                <div style="line-height: 1.4; margin-bottom: 8px;">
-                    <span style="{task_style} font-size: 14px;">{row['Task']}</span><br>
-                    <div style="margin-top:4px;">
-                        <span style="font-size: 11px; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 4px;">👤 {row['Assignee']}</span>
-                        <span style="font-size: 11px; color: #64748b; margin-left: 5px;">📅 {due_dt_str} {urgent_badge}</span>
-                    </div>
-                     <div style="margin-top:5px; text-align: right;">
-                        <a href="{gcal_link}" target="_blank" style="text-decoration:none; color: #4f46e5; font-size: 10px; font-weight: bold;">+ Add to G-Cal</a>
-                    </div>
-                </div>
-                <div style="border-bottom: 1px solid #f1f5f9; margin: 8px 0;"></div>
-                """, unsafe_allow_html=True)
-
+                c2.markdown(f"""<div style="line-height: 1.4; margin-bottom: 8px;"><span style="{task_style} font-size: 14px;">{row['Task']}</span><br>
+                    <div style="margin-top:4px;"><span style="font-size: 11px; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 4px;">👤 {row['Assignee']}</span>
+                    <span style="font-size: 11px; color: #64748b; margin-left: 5px;">📅 {due_dt_str} {urgent_badge}</span></div>
+                    <div style="margin-top:5px; text-align: right;"><a href="{gcal_link}" target="_blank" style="text-decoration:none; color: #4f46e5; font-size: 10px; font-weight: bold;">+ Add to G-Cal</a></div></div>
+                <div style="border-bottom: 1px solid #f1f5f9; margin: 8px 0;"></div>""", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
-
+        
 with st.expander("📂 View Archived History"):
     st.dataframe(st.session_state.archived, use_container_width=True)
 
