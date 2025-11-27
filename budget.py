@@ -23,7 +23,7 @@ DEPT_COLORS = {
     "💜 People & Culture": "#06b6d4"     # Cyan
 }
 
-TEAM = ["All", "Dept Head", "Alex", "Sarah", "Mike", "Exec Team"]
+TEAM = ["All", "Tate", "Shane", "Karim", "Simon", "Shy", "Karim", "Garth", "Agata", "Kike", "Kathy"]
 
 # Custom CSS
 st.markdown("""
