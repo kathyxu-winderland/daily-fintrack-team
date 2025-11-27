@@ -84,7 +84,6 @@ st.markdown("""
 
 # --- 2. DATA SETUP ---
 
-# Active Tasks
 if 'budget_tasks' not in st.session_state:
     st.session_state.budget_tasks = pd.DataFrame([
         {
@@ -98,16 +97,12 @@ if 'budget_tasks' not in st.session_state:
         }
     ])
 
-# Archived Tasks (History)
 if 'archived_tasks' not in st.session_state:
-    # Same columns + "Archived At"
     st.session_state.archived_tasks = pd.DataFrame(columns=list(st.session_state.budget_tasks.columns) + ['Archived At'])
 
-# Ensure 'Notes' column exists if loaded from old state
 if 'Notes' not in st.session_state.budget_tasks.columns:
     st.session_state.budget_tasks['Notes'] = ""
 
-# Session state to track which item is being edited
 if 'editing_index' not in st.session_state:
     st.session_state.editing_index = None
 
@@ -157,8 +152,32 @@ def send_slack_alert(task, dept, cost, assignee, is_reminder=False):
     try: requests.post(SLACK_WEBHOOK_URL, json=payload)
     except: pass
 
-def toggle_status(index):
-    st.session_state.budget_tasks.at[index, 'Status'] = not st.session_state.budget_tasks.at[index, 'Status']
+def complete_and_archive(index):
+    """
+    Moves the task at 'index' from budget_tasks to archived_tasks immediately.
+    """
+    # 1. Get the row
+    row = st.session_state.budget_tasks.iloc[index].copy()
+    
+    # 2. Add Timestamp
+    row['Archived At'] = datetime.now().strftime("%Y-%m-%d %H:%M")
+    row['Status'] = True # Ensure it's marked done
+    
+    # 3. Add to Archive DataFrame
+    st.session_state.archived_tasks = pd.concat(
+        [st.session_state.archived_tasks, pd.DataFrame([row])], 
+        ignore_index=True
+    )
+    
+    # 4. Remove from Active DataFrame
+    st.session_state.budget_tasks = st.session_state.budget_tasks.drop(index).reset_index(drop=True)
+    
+    # 5. Clear Edit Mode if we just archived the item being edited
+    if st.session_state.editing_index == index:
+        st.session_state.editing_index = None
+        
+    # 6. User Feedback
+    st.toast("✅ Task Completed & Archived!", icon="🎉")
 
 def delete_task(index):
     if st.session_state.editing_index == index:
@@ -239,34 +258,6 @@ if st.session_state.editing_index is not None:
 
 # --- 6. SIDEBAR ---
 with st.sidebar:
-    # --- ARCHIVE LOGIC ---
-    st.subheader("🏁 Actions")
-    
-    # Calculate how many are checked
-    completed_df = st.session_state.budget_tasks[st.session_state.budget_tasks["Status"] == True]
-    completed_count = len(completed_df)
-    
-    if completed_count > 0:
-        st.success(f"{completed_count} tasks marked as done.")
-        if st.button(f"📥 Archive Completed ({completed_count})"):
-            # Add timestamp
-            completed_df = completed_df.copy()
-            completed_df['Archived At'] = datetime.now().strftime("%Y-%m-%d %H:%M")
-            
-            # Move to archive
-            st.session_state.archived_tasks = pd.concat([st.session_state.archived_tasks, completed_df], ignore_index=True)
-            
-            # Keep only active tasks
-            st.session_state.budget_tasks = st.session_state.budget_tasks[st.session_state.budget_tasks["Status"] == False].reset_index(drop=True)
-            
-            st.success("Tasks moved to history!")
-            st.rerun()
-    else:
-        st.info("Mark tasks as done to archive them.")
-
-    st.markdown("---")
-    
-    # --- IMPORT ---
     st.subheader("📥 Bulk Import")
     template_df = pd.DataFrame([{"Task": "Sample Item", "Department": "Marketing", "Assignee": "Alex", "Cost": 1000, "Due Date": "2026-01-30", "Notes": "Optional info"}])
     csv_template = template_df.to_csv(index=False).encode('utf-8')
@@ -357,9 +348,17 @@ for i, (dept_name, dept_color) in enumerate(DEPT_COLORS.items()):
                 # Columns: Check | Text | Nudge | Edit | Delete
                 c1, c2, c3, c4, c5 = st.columns([0.08, 0.58, 0.1, 0.1, 0.1])
                 
-                c1.checkbox("", value=row["Status"], key=f"b_{idx}", on_change=toggle_status, args=(idx,))
+                # CHECKBOX -> AUTO ARCHIVE
+                # We use the 'complete_and_archive' function on change
+                c1.checkbox(
+                    "", 
+                    value=False, # Always False initially because if it were True, it would be archived
+                    key=f"b_{idx}", 
+                    on_change=complete_and_archive, 
+                    args=(idx,)
+                )
                 
-                t_style = "text-decoration: line-through; color: #cbd5e1;" if row["Status"] else "font-weight: 600; color: #334155;"
+                t_style = "font-weight: 600; color: #334155;"
                 cost_str = f"${row['Cost']:,.0f}" if row['Cost'] > 0 else "TBD"
                 
                 notes_html = ""
@@ -377,16 +376,18 @@ for i, (dept_name, dept_color) in enumerate(DEPT_COLORS.items()):
                 </div>
                 """, unsafe_allow_html=True)
                 
-                if not row["Status"]:
-                    if c3.button("🔔", key=f"n_{idx}", help="Nudge on Slack"):
-                         if SLACK_WEBHOOK_URL:
-                            send_slack_alert(row['Task'], row['Department'], row['Cost'], row['Assignee'], is_reminder=True)
-                            st.toast("Nudged!", icon="🔔")
+                # Nudge Button
+                if c3.button("🔔", key=f"n_{idx}", help="Nudge on Slack"):
+                     if SLACK_WEBHOOK_URL:
+                        send_slack_alert(row['Task'], row['Department'], row['Cost'], row['Assignee'], is_reminder=True)
+                        st.toast("Nudged!", icon="🔔")
 
+                # Edit (Move) Button
                 if c4.button("✏️", key=f"edit_{idx}", help="Edit/Move Task"):
                     st.session_state.editing_index = idx
                     st.rerun()
 
+                # Delete Button
                 if c5.button("🗑️", key=f"del_{idx}", help="Delete Item"):
                     delete_task(idx)
                     st.rerun()
