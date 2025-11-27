@@ -1,39 +1,44 @@
 import streamlit as st
 import pandas as pd
 import requests
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
 
-# --- 1. CONFIGURATION & STYLING ---
+# --- 1. CONFIGURATION ---
 st.set_page_config(page_title="Budget 2026 Tracker", page_icon="💰", layout="wide")
 
-# --- SECRETS SETUP (NO HARDCODED LINKS!) ---
+# --- SECRETS SETUP ---
 try:
-    # This looks for the link in Streamlit's secure vault
-    SLACK_WEBHOOK_URL = st.secrets["slack_webhook"]
-except FileNotFoundError:
-    # If the secret isn't found, we set it to EMPTY. Do not paste the link here.
-    SLACK_WEBHOOK_URL = ""
-except KeyError:
-    SLACK_WEBHOOK_URL = ""
+    SLACK_WEBHOOK_URL = st.secrets.get("slack_webhook", "")
+    EMAIL_SENDER = st.secrets.get("email_sender", "")
+    EMAIL_PASSWORD = st.secrets.get("email_password", "")
+    SMTP_SERVER = st.secrets.get("smtp_server", "smtp.gmail.com")
+    SMTP_PORT = st.secrets.get("smtp_port", 587)
+except:
+    SLACK_WEBHOOK_URL = "http://hooks.slack.com/services/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"
+    EMAIL_SENDER = "kathy.xu@zayzoon.com"
 
-# --- TEAM CONFIGURATION ---
-# Paste the User IDs (starting with U) here. 
-# Do NOT paste the Webhook URL here.
-SLACK_TEAM_IDS = {
-    "Tate": "U0H8U5B7D",
-    "Yuval": "UH8MRM8CB",
-    "Shane": "U79A2AHLZ",
-    "Shy": "USAC60WB1",
-    "Garth": "U51A7EBJ7",
-    "Agata": "U07PA7N7Y9L",
-    "Kike": "UQJG96F3L",
-    "Karim": "U07TJM3404D",
-    "Simon": "U065152B5A5",
-    "Jess": "U06MURH8R17",
-    "Kathy": "U05AS678C8Y",
-    "Thomas": "U06CVDPFAPK"
+# --- 2. TEAM CONFIGURATION (SLACK + EMAIL) ---
+# Paste IDs and Emails here
+TEAM_MEMBERS = {
+    "Tate":   {"slack": "U0H8U5B7D", "email": "tate.hackert@zayzoon.com"},
+    "Yuval":  {"slack": "UH8MRM8CB", "email": "yuval.kordov@zayzoon.com"},
+    "Shane":  {"slack": "U79A2AHLZ", "email": "shane.edrington@zayzoon.com"},
+    "Shy":    {"slack": "USAC60WB1", "email": "shayan.rahnama@zayzoon.com"},
+    "Garth":  {"slack": "U51A7EBJ7", "email": "garth.mcadam@zayzoon.com"},
+    "Agata":  {"slack": "U07PA7N7Y9L", "email": "agata.zasada@zayzoon.com"},
+    "Kike":   {"slack": "UQJG96F3L", "email": "kike.odunuga@zayzoon.com"},
+    "Karim":  {"slack": "U07TJM3404D", "email": "karim.punja@zayzoon.com"},
+    "Simon":  {"slack": "U065152B5A5", "email": "simon.millichip@zayzoon.com"},
+    "Jess":   {"slack": "U06MURH8R17", "email": "jess.petrella@zayzoon.com"},
+    "Kathy":  {"slack": "U05AS678C8Y", "email": "kathy.xu@zayzoon.com"},
+    "Thomas": {"slack": "U06CVDPFAPK", "email": "thomas.korpach@zayzoon.com"}
 }
-TEAM = ["All"] + list(SLACK_TEAM_IDS.keys())
+
+TEAM_LIST = ["All"] + list(TEAM_MEMBERS.keys())
+
 # Department Configuration
 DEPT_COLORS = {
     "🎧 Customer Care": "#f97316", "💻 Development": "#3b82f6", "💰 Finance": "#10b981",
@@ -42,6 +47,7 @@ DEPT_COLORS = {
     "👔 Leadership": "#111827", "💜 People & Culture": "#06b6d4"
 }
 
+# --- STYLES ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
@@ -67,16 +73,16 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- DATA & HELPER FUNCTIONS ---
-
+# --- DATA STATE ---
 if 'budget_tasks' not in st.session_state:
-    st.session_state.budget_tasks = pd.DataFrame([{"Task": "Q1 Hiring Plan Review", "Department": "💜 People & Culture", "Assignee": "Kathy", "Due Date": datetime.now() + timedelta(days=5), "Cost": 2500.0, "Notes": "Check headcount", "Status": False}])
+    st.session_state.budget_tasks = pd.DataFrame([{"Task": "Q1 Hiring Plan Review", "Department": "💜 People & Culture", "Assignee": "Kathy", "Due Date": datetime.now() + timedelta(days=1), "Cost": 2500.0, "Notes": "Check headcount", "Status": False}])
 
 if 'archived_tasks' not in st.session_state:
     st.session_state.archived_tasks = pd.DataFrame(columns=list(st.session_state.budget_tasks.columns) + ['Archived At'])
 if 'Notes' not in st.session_state.budget_tasks.columns: st.session_state.budget_tasks['Notes'] = ""
 if 'editing_index' not in st.session_state: st.session_state.editing_index = None
 
+# --- HELPER FUNCTIONS ---
 def normalize_department(input_str):
     if not isinstance(input_str, str): return "💰 Finance"
     input_clean = input_str.lower().strip()
@@ -87,38 +93,70 @@ def normalize_department(input_str):
     return "💰 Finance"
 
 def get_slack_mention(name):
-    slack_id = SLACK_TEAM_IDS.get(name, "")
+    member_data = TEAM_MEMBERS.get(name, {})
+    slack_id = member_data.get("slack", "")
     if slack_id and slack_id.startswith("U"): return f"<@{slack_id}>"
     return name
 
-def send_slack_test():
-    if not SLACK_WEBHOOK_URL: return False, "No Webhook URL found in Secrets."
-    payload = {"text": "🔔 *Slack Integration Test*\nConnection successful! 🚀"}
-    try:
-        r = requests.post(SLACK_WEBHOOK_URL, json=payload)
-        return (True, "Success!") if r.status_code == 200 else (False, f"Error: {r.status_code}")
-    except Exception as e: return False, str(e)
+# --- NOTIFICATION FUNCTIONS (SLACK + EMAIL) ---
 
-def send_slack_summary(count, total_value):
-    if not SLACK_WEBHOOK_URL: return
-    payload = {"text": f"📥 *Bulk Import:* {count} items added (${total_value:,.2f})"}
-    try: requests.post(SLACK_WEBHOOK_URL, json=payload)
-    except: pass
+def send_email_reminder(to_email, name, task, due_date):
+    """Sends an email using SMTP"""
+    if not EMAIL_SENDER or not EMAIL_PASSWORD:
+        return False, "Email secrets not configured."
+        
+    msg = MIMEMultipart()
+    msg['From'] = EMAIL_SENDER
+    msg['To'] = to_email
+    msg['Subject'] = f"🔔 Reminder: Task Due Tomorrow - {task}"
+    
+    body = f"""
+    Hi {name},
+    
+    This is a friendly reminder that the following task is due tomorrow:
+    
+    Task: {task}
+    Due Date: {due_date.strftime('%Y-%m-%d')}
+    
+    Please update the Budget Tracker app when complete.
+    
+    Best,
+    Finance Team
+    """
+    msg.attach(MIMEText(body, 'plain'))
+    
+    try:
+        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+        server.starttls()
+        server.login(EMAIL_SENDER, EMAIL_PASSWORD)
+        server.send_message(msg)
+        server.quit()
+        return True, "Sent"
+    except Exception as e:
+        return False, str(e)
 
 def send_slack_alert(task, dept, cost, assignee, is_reminder=False):
     if not SLACK_WEBHOOK_URL: return
     formatted_cost = f"${cost:,.2f}"
     assignee_tag = get_slack_mention(assignee)
+    
     if is_reminder: title, emoji, pretext = "Item Reminder", "🔔", f"Hey {assignee_tag}, update needed:"
-    else: title, emoji, pretext = "New Request", "💸", "New budget item added:"
+    else: title, emoji, pretext = "New Request", "💸", f"New budget item added for {assignee_tag}:"
+    
     payload = {
         "text": f"{emoji} {title}: {task}",
         "blocks": [
             {"type": "header", "text": {"type": "plain_text", "text": f"{emoji} {title}"}},
             {"type": "section", "text": {"type": "mrkdwn", "text": pretext}},
-            {"type": "section", "fields": [{"type": "mrkdwn", "text": f"*Dept:* {dept}"}, {"type": "mrkdwn", "text": f"*Cost:* {formatted_cost}"}, {"type": "mrkdwn", "text": f"*Task:* {task}"}, {"type": "mrkdwn", "text": f"*Who:* {assignee}"}]}
+            {"type": "section", "fields": [{"type": "mrkdwn", "text": f"*Dept:* {dept}"}, {"type": "mrkdwn", "text": f"*Cost:* {formatted_cost}"}, {"type": "mrkdwn", "text": f"*Task:* {task}"}]}
         ]
     }
+    try: requests.post(SLACK_WEBHOOK_URL, json=payload)
+    except: pass
+
+def send_slack_summary(count, total_value):
+    if not SLACK_WEBHOOK_URL: return
+    payload = {"text": f"📥 *Bulk Import:* {count} items added (${total_value:,.2f})"}
     try: requests.post(SLACK_WEBHOOK_URL, json=payload)
     except: pass
 
@@ -139,6 +177,7 @@ def delete_task(index):
 total_spend = st.session_state.budget_tasks["Cost"].sum()
 st.markdown(f"""<div class="budget-banner"><div style="display:flex;align-items:center;gap:24px;"><span style="font-size:40px;">🏦</span><div><h1 style="color:white;margin:0;font-size:26px;">Budget Master 2026</h1></div></div><div style="text-align:right;"><div style="font-size:13px;">Projected Spend</div><div style="font-size:36px;font-weight:800;">${total_spend:,.2f}</div></div></div>""", unsafe_allow_html=True)
 
+# --- EDIT MODE ---
 if st.session_state.editing_index is not None:
     idx = st.session_state.editing_index
     if idx in st.session_state.budget_tasks.index:
@@ -149,7 +188,8 @@ if st.session_state.editing_index is not None:
             c1, c2, c3 = st.columns(3)
             e_task = c1.text_input("Task Name", row['Task'])
             e_dept = c2.selectbox("📂 Department", list(DEPT_COLORS.keys()), list(DEPT_COLORS.keys()).index(row['Department']) if row['Department'] in DEPT_COLORS else 0)
-            e_assignee = c3.selectbox("Assignee", TEAM[1:], TEAM[1:].index(row['Assignee']) if row['Assignee'] in TEAM[1:] else 0)
+            curr_ass = row['Assignee'] if row['Assignee'] in TEAM_LIST[1:] else TEAM_LIST[1]
+            e_assignee = c3.selectbox("Assignee", TEAM_LIST[1:], TEAM_LIST[1:].index(curr_ass) if curr_ass in TEAM_LIST[1:] else 0)
             c4, c5 = st.columns(2)
             e_cost = c4.number_input("Cost", float(row['Cost']))
             e_date = c5.date_input("Due", pd.to_datetime(row['Due Date']))
@@ -163,12 +203,52 @@ if st.session_state.editing_index is not None:
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
+# --- SIDEBAR ---
 with st.sidebar:
+    # --- EMAIL REMINDERS SECTION ---
+    st.subheader("📧 Daily Reminders")
+    if st.button("Check Upcoming Deadlines"):
+        today = datetime.now().date()
+        tomorrow = today + timedelta(days=1)
+        
+        # Find tasks due tomorrow
+        due_tomorrow = st.session_state.budget_tasks[
+            st.session_state.budget_tasks['Due Date'].apply(lambda x: x.date() == tomorrow)
+        ]
+        
+        if due_tomorrow.empty:
+            st.info("No tasks due tomorrow.")
+        else:
+            sent_count = 0
+            for _, row in due_tomorrow.iterrows():
+                assignee = row['Assignee']
+                member_data = TEAM_MEMBERS.get(assignee, {})
+                email = member_data.get("email", "")
+                
+                if email and "@" in email:
+                    success, msg = send_email_reminder(email, assignee, row['Task'], row['Due Date'])
+                    if success:
+                        st.toast(f"📧 Sent email to {assignee}", icon="✅")
+                        sent_count += 1
+                    else:
+                        st.error(f"Failed to send to {assignee}: {msg}")
+                else:
+                    st.warning(f"No email found for {assignee}")
+            
+            if sent_count > 0:
+                st.success(f"Sent {sent_count} email reminders for tomorrow's deadlines.")
+
+    st.markdown("---")
     st.subheader("🔧 Configuration")
     if st.button("🔔 Test Slack Connection"):
-        ok, msg = send_slack_test()
-        if ok: st.success(msg)
-        else: st.error(msg)
+        # Test code...
+        if not SLACK_WEBHOOK_URL: st.error("No Slack URL")
+        else: 
+            try: 
+                requests.post(SLACK_WEBHOOK_URL, json={"text": "Test"})
+                st.success("Slack Connected!")
+            except: st.error("Connection Failed")
+
     st.markdown("---")
     st.subheader("📥 Bulk Import")
     template_df = pd.DataFrame([{"Task": "Sample", "Department": "Marketing", "Assignee": "Alex", "Cost": 1000, "Due Date": "2026-01-30", "Notes": "Info"}])
@@ -193,7 +273,7 @@ with st.sidebar:
     with st.form("add"):
         nt = st.text_input("Item")
         nd = st.selectbox("Dept", list(DEPT_COLORS.keys()))
-        na = st.selectbox("Who", TEAM[1:])
+        na = st.selectbox("Who", TEAM_LIST[1:])
         nc = st.number_input("Cost")
         dd = st.date_input("Due")
         nn = st.text_area("Notes")
@@ -202,6 +282,7 @@ with st.sidebar:
             send_slack_alert(nt, nd, nc, na)
             st.rerun()
 
+# --- MAIN GRID ---
 cols = st.columns(3)
 for i, (d_name, d_col) in enumerate(DEPT_COLORS.items()):
     with cols[i%3]:
