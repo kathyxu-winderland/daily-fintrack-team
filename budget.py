@@ -92,9 +92,14 @@ if 'budget_tasks' not in st.session_state:
             "Assignee": "Sarah", 
             "Due Date": datetime.now() + timedelta(days=5), 
             "Cost": 2500.0,
+            "Notes": "Need to confirm headcount with Finance first.",
             "Status": False
         }
     ])
+
+# Ensure 'Notes' column exists if loaded from old state
+if 'Notes' not in st.session_state.budget_tasks.columns:
+    st.session_state.budget_tasks['Notes'] = ""
 
 # Session state to track which item is being edited
 if 'editing_index' not in st.session_state:
@@ -177,7 +182,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# --- 5. EDIT MODE (The Solution for "Dragging") ---
+# --- 5. EDIT MODE ---
 if st.session_state.editing_index is not None:
     idx = st.session_state.editing_index
     if idx in st.session_state.budget_tasks.index:
@@ -189,30 +194,37 @@ if st.session_state.editing_index is not None:
         with st.form("edit_mode_form"):
             col_e1, col_e2, col_e3 = st.columns(3)
             
-            # REVERTED ORDER: Task Name First, Department Second
+            # Row 1 Inputs
             e_task = col_e1.text_input("Task Name", value=row_to_edit['Task'])
-            e_cost = col_e1.number_input("Cost ($)", value=float(row_to_edit['Cost']), min_value=0.0)
             
-            # Department logic to pre-select current dept
             current_dept_idx = list(DEPT_COLORS.keys()).index(row_to_edit['Department']) if row_to_edit['Department'] in DEPT_COLORS else 0
             e_dept = col_e2.selectbox("📂 Department (Move)", list(DEPT_COLORS.keys()), index=current_dept_idx)
             
-            # Assignee logic
             current_assignee_idx = TEAM[1:].index(row_to_edit['Assignee']) if row_to_edit['Assignee'] in TEAM[1:] else 0
-            e_assignee = col_e2.selectbox("Assignee", TEAM[1:], index=current_assignee_idx)
+            e_assignee = col_e3.selectbox("Assignee", TEAM[1:], index=current_assignee_idx)
+
+            # Row 2 Inputs
+            col_e4, col_e5 = st.columns(2)
+            e_cost = col_e4.number_input("Cost ($)", value=float(row_to_edit['Cost']), min_value=0.0)
+            e_date = col_e5.date_input("Due Date", value=pd.to_datetime(row_to_edit['Due Date']))
             
-            e_date = col_e3.date_input("Due Date", value=pd.to_datetime(row_to_edit['Due Date']))
+            # Row 3 Notes
+            # Retrieve existing notes, handle NaN/None
+            current_notes = str(row_to_edit['Notes']) if pd.notna(row_to_edit.get('Notes')) else ""
+            e_notes = st.text_area("📝 Notes / Comments", value=current_notes)
             
-            submitted = st.form_submit_button("💾 Save & Move")
+            submitted = st.form_submit_button("💾 Save Changes")
             
             if submitted:
                 st.session_state.budget_tasks.at[idx, 'Task'] = e_task
-                st.session_state.budget_tasks.at[idx, 'Department'] = e_dept # This moves the card
+                st.session_state.budget_tasks.at[idx, 'Department'] = e_dept
                 st.session_state.budget_tasks.at[idx, 'Assignee'] = e_assignee
                 st.session_state.budget_tasks.at[idx, 'Cost'] = e_cost
                 st.session_state.budget_tasks.at[idx, 'Due Date'] = e_date
+                st.session_state.budget_tasks.at[idx, 'Notes'] = e_notes
+                
                 st.session_state.editing_index = None
-                st.success("Task moved/updated successfully!")
+                st.success("Task updated!")
                 st.rerun()
 
         if st.button("Cancel"):
@@ -224,7 +236,8 @@ if st.session_state.editing_index is not None:
 # --- 6. SIDEBAR (IMPORT & ADD) ---
 with st.sidebar:
     st.subheader("📥 Bulk Import")
-    template_df = pd.DataFrame([{"Task": "Sample Item", "Department": "Marketing", "Assignee": "Alex", "Cost": 1000, "Due Date": "2026-01-30"}])
+    # Updated template with Notes column
+    template_df = pd.DataFrame([{"Task": "Sample Item", "Department": "Marketing", "Assignee": "Alex", "Cost": 1000, "Due Date": "2026-01-30", "Notes": "Optional info"}])
     csv_template = template_df.to_csv(index=False).encode('utf-8')
     st.download_button("📄 Download Excel Template", data=csv_template, file_name="budget_template.csv", mime="text/csv")
     
@@ -246,8 +259,20 @@ with st.sidebar:
                         except: d_date = datetime.now() + timedelta(days=30)
                         try: cost_val = float(str(row.get('Cost', 0)).replace('$','').replace(',',''))
                         except: cost_val = 0.0
+                        
+                        # Handle Notes Import
+                        note_val = str(row.get('Notes', ""))
+                        if note_val == "nan": note_val = ""
 
-                        new_rows.append({"Task": str(row['Task']), "Department": matched_dept, "Assignee": str(row.get('Assignee', 'Team')), "Due Date": d_date, "Cost": cost_val, "Status": False})
+                        new_rows.append({
+                            "Task": str(row['Task']), 
+                            "Department": matched_dept, 
+                            "Assignee": str(row.get('Assignee', 'Team')), 
+                            "Due Date": d_date, 
+                            "Cost": cost_val, 
+                            "Notes": note_val,
+                            "Status": False
+                        })
                         total_import_val += cost_val
 
                     st.session_state.budget_tasks = pd.concat([pd.DataFrame(new_rows), st.session_state.budget_tasks], ignore_index=True)
@@ -264,9 +289,14 @@ with st.sidebar:
         new_assignee = st.selectbox("Assignee", TEAM[1:])
         new_cost = st.number_input("Est. Cost ($)", min_value=0.0, step=100.0)
         new_date = st.date_input("Deadline", value=datetime.now() + timedelta(days=7))
+        new_notes = st.text_area("Notes (Optional)", height=80)
         
         if st.form_submit_button("Add to Board"):
-            new_entry = {"Task": new_task, "Department": new_dept, "Assignee": new_assignee, "Due Date": pd.to_datetime(new_date), "Cost": new_cost, "Status": False}
+            new_entry = {
+                "Task": new_task, "Department": new_dept, 
+                "Assignee": new_assignee, "Due Date": pd.to_datetime(new_date), 
+                "Cost": new_cost, "Notes": new_notes, "Status": False
+            }
             st.session_state.budget_tasks = pd.concat([pd.DataFrame([new_entry]), st.session_state.budget_tasks], ignore_index=True)
             if SLACK_WEBHOOK_URL: send_slack_alert(new_task, new_dept, new_cost, new_assignee)
             st.rerun()
@@ -302,13 +332,19 @@ for i, (dept_name, dept_color) in enumerate(DEPT_COLORS.items()):
                 t_style = "text-decoration: line-through; color: #cbd5e1;" if row["Status"] else "font-weight: 600; color: #334155;"
                 cost_str = f"${row['Cost']:,.0f}" if row['Cost'] > 0 else "TBD"
                 
+                # Check for notes
+                notes_html = ""
+                if pd.notna(row.get('Notes')) and str(row['Notes']).strip() != "":
+                    notes_html = f"<div style='font-size: 11px; color: #64748b; background: #f1f5f9; padding: 4px 8px; border-radius: 4px; margin-top: 6px; display:inline-block;'>📝 {row['Notes']}</div>"
+
                 c2.markdown(f"""
                 <div style="padding-top: 2px;">
                     <div style="{t_style} font-size: 14px; margin-bottom: 6px;">{row['Task']}</div>
-                    <div style="display: flex; align-items: center;">
+                    <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 4px;">
                         <span class="meta-pill assignee-pill">👤 {row['Assignee']}</span>
                         <span class="meta-pill cost-pill">{cost_str}</span>
                     </div>
+                    {notes_html}
                 </div>
                 """, unsafe_allow_html=True)
                 
