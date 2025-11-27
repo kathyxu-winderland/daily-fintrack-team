@@ -20,18 +20,18 @@ except KeyError:
 # Paste the User IDs (starting with U) here. 
 # Do NOT paste the Webhook URL here.
 SLACK_TEAM_IDS = {
-    "Tate": "",
-    "Yuval": "",
-    "Shane": "",
-    "Shy": "",
-    "Garth": "",
-    "Agata": "",
-    "Kike": "",
-    "Karim": "",
-    "Simon": "",
-    "Jess": "",
-    "Kathy": "",
-    "Thomas": ""
+    "Tate": "U0H8U5B7D",
+    "Yuval": "UH8MRM8CB",
+    "Shane": "U79A2AHLZ",
+    "Shy": "USAC60WB1",
+    "Garth": "U51A7EBJ7",
+    "Agata": "U07PA7N7Y9L",
+    "Kike": "UQJG96F3L",
+    "Karim": "U07TJM3404D",
+    "Simon": "U065152B5A5",
+    "Jess": "U06MURH8R17",
+    "Kathy": "U05AS678C8Y",
+    "Thomas": "U06CVDPFAPK"
 }
 TEAM = ["All"] + list(SLACK_TEAM_IDS.keys())
 # Department Configuration
