@@ -6,35 +6,34 @@ from datetime import datetime, timedelta
 # --- 1. CONFIGURATION & STYLING ---
 st.set_page_config(page_title="Budget 2026 Tracker", page_icon="💰", layout="wide")
 
-# --- SECRETS SETUP ---
-# We grab the URL from Streamlit's secure vault
+# --- SECRETS SETUP (NO HARDCODED LINKS!) ---
 try:
+    # This looks for the link in Streamlit's secure vault
     SLACK_WEBHOOK_URL = st.secrets["slack_webhook"]
 except FileNotFoundError:
-    st.error("🚨 Slack Webhook not found. Please add it to Streamlit Secrets.")
-    SLACK_WEBHOOK_URL = "http://hooks.slack.com/services/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"
+    # If the secret isn't found, we set it to EMPTY. Do not paste the link here.
+    SLACK_WEBHOOK_URL = ""
 except KeyError:
-    st.error("🚨 Key 'slack_webhook' not found in Secrets.")
     SLACK_WEBHOOK_URL = ""
 
-# --- TEAM CONFIGURATION WITH SLACK IDs ---
+# --- TEAM CONFIGURATION ---
+# Paste the User IDs (starting with U) here. 
+# Do NOT paste the Webhook URL here.
 SLACK_TEAM_IDS = {
-    "Tate": "U0H8U5B7D",
-    "Yuval": "UH8MRM8CB",
-    "Shane": "U79A2AHLZ",
-    "Shy": "USAC60WB1",
-    "Garth": "U51A7EBJ7",
-    "Agata": "U07PA7N7Y9L",
-    "Kike": "UQJG96F3L",
-    "Karim": "U07TJM3404D",
-    "Simon": "U065152B5A5",
-    "Jess": "U06MURH8R17",
-    "Kathy": "U05AS678C8Y",
-    "Thomas": "U06CVDPFAPK"
+    "Tate": "",
+    "Yuval": "",
+    "Shane": "",
+    "Shy": "",
+    "Garth": "",
+    "Agata": "",
+    "Kike": "",
+    "Karim": "",
+    "Simon": "",
+    "Jess": "",
+    "Kathy": "",
+    "Thomas": ""
 }
-
 TEAM = ["All"] + list(SLACK_TEAM_IDS.keys())
-
 # Department Configuration
 DEPT_COLORS = {
     "🎧 Customer Care": "#f97316", "💻 Development": "#3b82f6", "💰 Finance": "#10b981",
