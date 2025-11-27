@@ -10,6 +10,7 @@ st.set_page_config(page_title="Budget 2026 Tracker", page_icon="💰", layout="w
 SLACK_WEBHOOK_URL = ""
 
 # Department Configuration
+# I have split Product and Sales & Success here
 DEPT_COLORS = {
     "🎧 Customer Care": "#f97316",       # Orange
     "💻 Development": "#3b82f6",         # Blue
@@ -17,7 +18,8 @@ DEPT_COLORS = {
     "📢 Marketing": "#ec4899",           # Pink
     "🖥️ IT Operation": "#64748b",        # Slate
     "📈 Data & Rev Op": "#8b5cf6",       # Violet
-    "🚀 Product, Sales & Success": "#6366f1", # Indigo
+    "🚀 Product": "#6366f1",             # Indigo (Split)
+    "💼 Sales & Success": "#0ea5e9",     # Sky Blue (Split/New)
     "⚖️ Legal": "#d97706",               # Amber
     "👔 Leadership": "#111827",          # Black
     "💜 People & Culture": "#06b6d4"     # Cyan
@@ -89,10 +91,15 @@ if 'budget_tasks' not in st.session_state:
 def normalize_department(input_str):
     if not isinstance(input_str, str): return "💰 Finance"
     input_clean = input_str.lower().strip()
+    
+    # Check exact keys first
     for key in DEPT_COLORS.keys():
         if key == input_str: return key
+        
+    # Check match
     for key in DEPT_COLORS.keys():
         if input_clean in key.lower(): return key
+        
     return "💰 Finance"
 
 def send_slack_summary(count, total_value):
@@ -134,7 +141,6 @@ def toggle_status(index):
     st.session_state.budget_tasks.at[index, 'Status'] = not st.session_state.budget_tasks.at[index, 'Status']
 
 def delete_task(index):
-    # Drop the row by index and reset the dataframe index
     st.session_state.budget_tasks = st.session_state.budget_tasks.drop(index).reset_index(drop=True)
 
 # --- 4. TOP BANNER ---
@@ -159,7 +165,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# --- 5. SIDEBAR (IMPORT & ADD) ---
+# --- 5. SIDEBAR ---
 with st.sidebar:
     st.subheader("📥 Bulk Import")
     template_df = pd.DataFrame([{"Task": "Sample Item", "Department": "Marketing", "Assignee": "Alex", "Cost": 1000, "Due Date": "2026-01-30"}])
@@ -232,13 +238,10 @@ for i, (dept_name, dept_color) in enumerate(DEPT_COLORS.items()):
             st.markdown("<div style='padding: 30px; text-align: center; color: #cbd5e1; font-size: 13px;'>No requests</div>", unsafe_allow_html=True)
         else:
             for idx, row in dept_tasks.iterrows():
-                # Grid for Row Content: Checkbox | Content | Nudge | Delete
                 c1, c2, c3, c4 = st.columns([0.1, 0.66, 0.12, 0.12])
                 
-                # Checkbox
                 c1.checkbox("", value=row["Status"], key=f"b_{idx}", on_change=toggle_status, args=(idx,))
                 
-                # Content
                 t_style = "text-decoration: line-through; color: #cbd5e1;" if row["Status"] else "font-weight: 600; color: #334155;"
                 cost_str = f"${row['Cost']:,.0f}" if row['Cost'] > 0 else "TBD"
                 
@@ -252,14 +255,12 @@ for i, (dept_name, dept_color) in enumerate(DEPT_COLORS.items()):
                 </div>
                 """, unsafe_allow_html=True)
                 
-                # Nudge Button (Only if active)
                 if not row["Status"]:
                     if c3.button("🔔", key=f"n_{idx}", help="Nudge on Slack"):
                          if SLACK_WEBHOOK_URL:
                             send_slack_alert(row['Task'], row['Department'], row['Cost'], row['Assignee'], is_reminder=True)
                             st.toast("Nudged!", icon="🔔")
 
-                # Delete Button
                 if c4.button("🗑️", key=f"del_{idx}", help="Delete Item"):
                     delete_task(idx)
                     st.rerun()
