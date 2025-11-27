@@ -25,13 +25,11 @@ DEPT_COLORS = {
 
 TEAM = ["All", "Dept Head", "Alex", "Sarah", "Mike", "Exec Team"]
 
-# Custom CSS - The "Top Tier" Design System
+# Custom CSS
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-
     .main { background-color: #f8fafc; }
-    
     h1, h2, h3, h4, p, div, span { font-family: 'Inter', sans-serif; }
     
     /* MAIN BANNER */
@@ -42,70 +40,23 @@ st.markdown("""
         color: white;
         margin-bottom: 40px;
         box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
+        display: flex; align-items: center; justify-content: space-between;
     }
     
-    /* KANBAN CARD CONTAINER */
+    /* KANBAN CARD */
     .kanban-card {
-        background-color: white;
-        border-radius: 16px;
-        border: 1px solid #e2e8f0;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02);
-        margin-bottom: 24px;
-        overflow: hidden; /* Keeps header inside border radius */
-        transition: all 0.2s ease;
+        background-color: white; border-radius: 16px; border: 1px solid #e2e8f0;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02); margin-bottom: 24px;
+        overflow: hidden; transition: all 0.2s ease;
     }
-    .kanban-card:hover {
-        transform: translateY(-4px);
-        box-shadow: 0 12px 16px -4px rgba(0, 0, 0, 0.08);
-    }
+    .kanban-card:hover { transform: translateY(-4px); box-shadow: 0 12px 16px -4px rgba(0, 0, 0, 0.08); }
     
-    /* CARD HEADER */
-    .card-header {
-        padding: 16px 20px;
-        border-bottom: 1px solid #f1f5f9;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-    
-    /* TASK ROW styling */
-    .task-row {
-        padding: 12px 20px;
-        border-bottom: 1px solid #f8fafc;
-    }
-    .task-row:last-child { border-bottom: none; }
-    
-    /* PILLS & BADGES */
-    .meta-pill {
-        display: inline-flex;
-        align-items: center;
-        padding: 4px 10px;
-        border-radius: 20px;
-        font-size: 11px;
-        font-weight: 600;
-        margin-right: 6px;
-    }
+    /* HEADER & PILLS */
+    .card-header { padding: 16px 20px; border-bottom: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center; }
+    .meta-pill { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; margin-right: 6px; }
     .assignee-pill { background-color: #f1f5f9; color: #475569; }
     .cost-pill { background-color: #ecfdf5; color: #059669; letter-spacing: 0.5px; }
-    
-    /* CHECKBOX OVERRIDE */
-    div[data-testid="stCheckbox"] label {
-        padding-top: 2px;
-    }
-    
-    /* BUTTONS */
-    .stButton button {
-        border-radius: 8px;
-        border: 1px solid #e2e8f0;
-        transition: all 0.2s;
-    }
-    .stButton button:hover {
-        border-color: #cbd5e1;
-        background-color: #f8fafc;
-    }
+    .stButton button { border-radius: 8px; border: 1px solid #e2e8f0; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -120,31 +71,48 @@ if 'budget_tasks' not in st.session_state:
             "Due Date": datetime.now() + timedelta(days=5), 
             "Cost": 2500.0,
             "Status": False
-        },
-        {
-            "Task": "Server Infrastructure Upgrade", 
-            "Department": "💻 Development", 
-            "Assignee": "Mike", 
-            "Due Date": datetime.now() + timedelta(days=14), 
-            "Cost": 15000.0,
-            "Status": False
-        },
-        {
-            "Task": "2026 Ad Spend Strategy", 
-            "Department": "📢 Marketing", 
-            "Assignee": "Alex", 
-            "Due Date": datetime.now() + timedelta(days=2), 
-            "Cost": 50000.0,
-            "Status": False
-        },
+        }
     ])
 
-# --- 3. LOGIC & SLACK ---
+# --- 3. HELPER FUNCTIONS ---
+
+def normalize_department(input_str):
+    """Matches 'Marketing' to '📢 Marketing' automatically"""
+    if not isinstance(input_str, str): return "💰 Finance" # Default fallback
+    
+    input_clean = input_str.lower().strip()
+    
+    # Check exact keys first
+    for key in DEPT_COLORS.keys():
+        if key == input_str: return key
+        
+    # Check if input is part of key (e.g. "Marketing" in "📢 Marketing")
+    for key in DEPT_COLORS.keys():
+        if input_clean in key.lower():
+            return key
+            
+    return "💰 Finance" # Fallback
+
+def send_slack_summary(count, total_value):
+    """Sends a summary alert for bulk imports"""
+    if not SLACK_WEBHOOK_URL: return
+    
+    payload = {
+        "text": f"📥 *Bulk Import:* {count} items added (${total_value:,.2f})",
+        "blocks": [
+            {"type": "section", "text": {"type": "mrkdwn", "text": f"📥 *Bulk Import Successful*\n{count} new line items have been added to the board."}},
+            {"type": "section", "fields": [
+                {"type": "mrkdwn", "text": f"*Total Items:*\n{count}"},
+                {"type": "mrkdwn", "text": f"*Total Value:*\n${total_value:,.2f}"}
+            ]}
+        ]
+    }
+    try: requests.post(SLACK_WEBHOOK_URL, json=payload)
+    except: pass
 
 def send_slack_alert(task, dept, cost, assignee, is_reminder=False):
     if not SLACK_WEBHOOK_URL: return
     formatted_cost = f"${cost:,.2f}"
-    
     if is_reminder:
         title, emoji, color, pretext = "Item Reminder", "🔔", "#f59e0b", f"Hey *{assignee}*, update needed:"
     else:
@@ -171,7 +139,6 @@ def toggle_status(index):
 # --- 4. TOP BANNER ---
 total_spend = st.session_state.budget_tasks["Cost"].sum()
 formatted_spend = f"${total_spend:,.2f}"
-pending_count = len(st.session_state.budget_tasks[st.session_state.budget_tasks["Status"] == False])
 
 st.markdown(f"""
 <div class="budget-banner">
@@ -180,7 +147,7 @@ st.markdown(f"""
             <span style="font-size: 40px;">🏦</span>
         </div>
         <div>
-            <h1 style="color: white; margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.5px;">Budget Master 2026</h1>
+            <h1 style="color: white; margin: 0; font-size: 26px; font-weight: 700;">Budget Master 2026</h1>
             <p style="color: #94a3b8; margin: 4px 0 0 0; font-size: 15px;">Tracking {len(st.session_state.budget_tasks)} line items across departments</p>
         </div>
     </div>
@@ -191,9 +158,83 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# --- 5. SIDEBAR ---
+# --- 5. SIDEBAR (IMPORT LOGIC) ---
 with st.sidebar:
-    st.subheader("➕ New Request")
+    # 1. TEMPLATE DOWNLOAD
+    st.subheader("📥 Bulk Import")
+    
+    # Create sample template
+    template_df = pd.DataFrame([{"Task": "Sample Item", "Department": "Marketing", "Assignee": "Alex", "Cost": 1000, "Due Date": "2026-01-30"}])
+    csv_template = template_df.to_csv(index=False).encode('utf-8')
+    
+    st.download_button("📄 Download Excel Template", data=csv_template, file_name="budget_template.csv", mime="text/csv", help="Use this format to upload data")
+    
+    # 2. UPLOADER
+    uploaded_file = st.file_uploader("Upload CSV or Excel", type=['csv', 'xlsx'])
+    
+    if uploaded_file is not None:
+        try:
+            # Read file
+            if uploaded_file.name.endswith('.csv'):
+                df_upload = pd.read_csv(uploaded_file)
+            else:
+                df_upload = pd.read_excel(uploaded_file)
+                
+            # Process Data
+            required_cols = ['Task', 'Department', 'Assignee', 'Cost', 'Due Date']
+            
+            # Simple validation: Check if 'Task' column exists
+            if 'Task' not in df_upload.columns:
+                st.error("File is missing 'Task' column. Please use the template.")
+            else:
+                if st.button(f"Process {len(df_upload)} rows"):
+                    new_rows = []
+                    total_import_val = 0
+                    
+                    for index, row in df_upload.iterrows():
+                        # Smart Match Department
+                        matched_dept = normalize_department(row.get('Department', 'Finance'))
+                        
+                        # Handle Dates safely
+                        try:
+                            d_date = pd.to_datetime(row.get('Due Date', datetime.now()))
+                        except:
+                            d_date = datetime.now() + timedelta(days=30)
+                            
+                        # Handle Cost safely
+                        try:
+                            cost_val = float(str(row.get('Cost', 0)).replace('$','').replace(',',''))
+                        except:
+                            cost_val = 0.0
+
+                        new_entry = {
+                            "Task": str(row['Task']),
+                            "Department": matched_dept,
+                            "Assignee": str(row.get('Assignee', 'Team')),
+                            "Due Date": d_date,
+                            "Cost": cost_val,
+                            "Status": False
+                        }
+                        new_rows.append(new_entry)
+                        total_import_val += cost_val
+
+                    # Update State
+                    st.session_state.budget_tasks = pd.concat([pd.DataFrame(new_rows), st.session_state.budget_tasks], ignore_index=True)
+                    
+                    # Notify Slack
+                    if SLACK_WEBHOOK_URL:
+                        send_slack_summary(len(new_rows), total_import_val)
+                        
+                    st.success("Import Successful!")
+                    st.rerun()
+                    
+        except Exception as e:
+            st.error(f"Error reading file: {e}")
+
+    st.markdown("---")
+    
+    # Manual Add (Existing Logic)
+    st.subheader("➕ Single Entry")
     with st.form("add_budget_form", clear_on_submit=True):
         new_task = st.text_input("Line Item Name")
         new_dept = st.selectbox("Department", list(DEPT_COLORS.keys()))
@@ -210,12 +251,7 @@ with st.sidebar:
             st.session_state.budget_tasks = pd.concat([pd.DataFrame([new_entry]), st.session_state.budget_tasks], ignore_index=True)
             if SLACK_WEBHOOK_URL:
                 send_slack_alert(new_task, new_dept, new_cost, new_assignee)
-                st.toast("Notification sent to Slack!", icon="🚀")
             st.rerun()
-            
-    st.markdown("---")
-    csv = st.session_state.budget_tasks.to_csv(index=False).encode('utf-8')
-    st.download_button(label="📄 Export to Excel/CSV", data=csv, file_name='budget_2026.csv', mime='text/csv')
 
 # --- 6. MODERN GRID LAYOUT ---
 grid_cols = st.columns(3)
@@ -226,8 +262,6 @@ for i, (dept_name, dept_color) in enumerate(DEPT_COLORS.items()):
         dept_tasks = st.session_state.budget_tasks[st.session_state.budget_tasks["Department"] == dept_name]
         dept_total = dept_tasks["Cost"].sum()
         
-        # 1. THE CARD CONTAINER START
-        # We use a soft background color (hex + '15' opacity) for the header
         header_bg = f"{dept_color}15" 
         
         st.markdown(f"""
@@ -238,19 +272,13 @@ for i, (dept_name, dept_color) in enumerate(DEPT_COLORS.items()):
             </div>
         """, unsafe_allow_html=True)
         
-        # 2. TASK ITEMS LOOP
         if dept_tasks.empty:
             st.markdown("<div style='padding: 30px; text-align: center; color: #cbd5e1; font-size: 13px;'>No requests</div>", unsafe_allow_html=True)
         else:
             for idx, row in dept_tasks.iterrows():
-                # Grid for Row Content
                 c1, c2, c3 = st.columns([0.15, 0.70, 0.15])
-                
-                # Checkbox
                 c1.checkbox("", value=row["Status"], key=f"b_{idx}", on_change=toggle_status, args=(idx,))
                 
-                # Content
-                # Logic for strike-through text
                 t_style = "text-decoration: line-through; color: #cbd5e1;" if row["Status"] else "font-weight: 600; color: #334155;"
                 cost_str = f"${row['Cost']:,.0f}" if row['Cost'] > 0 else "TBD"
                 
@@ -264,15 +292,12 @@ for i, (dept_name, dept_color) in enumerate(DEPT_COLORS.items()):
                 </div>
                 """, unsafe_allow_html=True)
                 
-                # Button (Only show if active)
                 if not row["Status"]:
                     if c3.button("🔔", key=f"n_{idx}", help="Nudge on Slack"):
                          if SLACK_WEBHOOK_URL:
                             send_slack_alert(row['Task'], row['Department'], row['Cost'], row['Assignee'], is_reminder=True)
                             st.toast("Nudged!", icon="🔔")
 
-                # Visual Separator (Markdown) to mimic row line
                 st.markdown("<div style='border-bottom: 1px solid #f8fafc; margin: 8px 0;'></div>", unsafe_allow_html=True)
 
-        # 3. CARD CONTAINER END
         st.markdown("</div>", unsafe_allow_html=True)
