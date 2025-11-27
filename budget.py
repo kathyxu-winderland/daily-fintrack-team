@@ -23,7 +23,7 @@ DEPT_COLORS = {
     "💜 People & Culture": "#06b6d4"     # Cyan
 }
 
-TEAM = ["All", "Tate", "Shane", "Karim", "Simon", "Shy", "Karim", "Garth", "Agata", "Kike", "Kathy"]
+TEAM = ["All", "Dept Head", "Alex", "Sarah", "Mike", "Exec Team"]
 
 # Custom CSS
 st.markdown("""
@@ -56,7 +56,17 @@ st.markdown("""
     .meta-pill { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; margin-right: 6px; }
     .assignee-pill { background-color: #f1f5f9; color: #475569; }
     .cost-pill { background-color: #ecfdf5; color: #059669; letter-spacing: 0.5px; }
-    .stButton button { border-radius: 8px; border: 1px solid #e2e8f0; }
+    
+    /* BUTTON STYLING */
+    .stButton button { 
+        border-radius: 8px; 
+        border: 1px solid #e2e8f0; 
+        padding: 2px 10px;
+    }
+    .stButton button:hover {
+        border-color: #cbd5e1;
+        background-color: #f1f5f9;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -77,34 +87,21 @@ if 'budget_tasks' not in st.session_state:
 # --- 3. HELPER FUNCTIONS ---
 
 def normalize_department(input_str):
-    """Matches 'Marketing' to '📢 Marketing' automatically"""
-    if not isinstance(input_str, str): return "💰 Finance" # Default fallback
-    
+    if not isinstance(input_str, str): return "💰 Finance"
     input_clean = input_str.lower().strip()
-    
-    # Check exact keys first
     for key in DEPT_COLORS.keys():
         if key == input_str: return key
-        
-    # Check if input is part of key (e.g. "Marketing" in "📢 Marketing")
     for key in DEPT_COLORS.keys():
-        if input_clean in key.lower():
-            return key
-            
-    return "💰 Finance" # Fallback
+        if input_clean in key.lower(): return key
+    return "💰 Finance"
 
 def send_slack_summary(count, total_value):
-    """Sends a summary alert for bulk imports"""
     if not SLACK_WEBHOOK_URL: return
-    
     payload = {
         "text": f"📥 *Bulk Import:* {count} items added (${total_value:,.2f})",
         "blocks": [
             {"type": "section", "text": {"type": "mrkdwn", "text": f"📥 *Bulk Import Successful*\n{count} new line items have been added to the board."}},
-            {"type": "section", "fields": [
-                {"type": "mrkdwn", "text": f"*Total Items:*\n{count}"},
-                {"type": "mrkdwn", "text": f"*Total Value:*\n${total_value:,.2f}"}
-            ]}
+            {"type": "section", "fields": [{"type": "mrkdwn", "text": f"*Total Items:*\n{count}"}, {"type": "mrkdwn", "text": f"*Total Value:*\n${total_value:,.2f}"}]}
         ]
     }
     try: requests.post(SLACK_WEBHOOK_URL, json=payload)
@@ -136,6 +133,10 @@ def send_slack_alert(task, dept, cost, assignee, is_reminder=False):
 def toggle_status(index):
     st.session_state.budget_tasks.at[index, 'Status'] = not st.session_state.budget_tasks.at[index, 'Status']
 
+def delete_task(index):
+    # Drop the row by index and reset the dataframe index
+    st.session_state.budget_tasks = st.session_state.budget_tasks.drop(index).reset_index(drop=True)
+
 # --- 4. TOP BANNER ---
 total_spend = st.session_state.budget_tasks["Cost"].sum()
 formatted_spend = f"${total_spend:,.2f}"
@@ -158,82 +159,42 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# --- 5. SIDEBAR (IMPORT LOGIC) ---
+# --- 5. SIDEBAR (IMPORT & ADD) ---
 with st.sidebar:
-    # 1. TEMPLATE DOWNLOAD
     st.subheader("📥 Bulk Import")
-    
-    # Create sample template
     template_df = pd.DataFrame([{"Task": "Sample Item", "Department": "Marketing", "Assignee": "Alex", "Cost": 1000, "Due Date": "2026-01-30"}])
     csv_template = template_df.to_csv(index=False).encode('utf-8')
+    st.download_button("📄 Download Excel Template", data=csv_template, file_name="budget_template.csv", mime="text/csv")
     
-    st.download_button("📄 Download Excel Template", data=csv_template, file_name="budget_template.csv", mime="text/csv", help="Use this format to upload data")
-    
-    # 2. UPLOADER
     uploaded_file = st.file_uploader("Upload CSV or Excel", type=['csv', 'xlsx'])
-    
     if uploaded_file is not None:
         try:
-            # Read file
-            if uploaded_file.name.endswith('.csv'):
-                df_upload = pd.read_csv(uploaded_file)
-            else:
-                df_upload = pd.read_excel(uploaded_file)
-                
-            # Process Data
-            required_cols = ['Task', 'Department', 'Assignee', 'Cost', 'Due Date']
+            if uploaded_file.name.endswith('.csv'): df_upload = pd.read_csv(uploaded_file)
+            else: df_upload = pd.read_excel(uploaded_file)
             
-            # Simple validation: Check if 'Task' column exists
             if 'Task' not in df_upload.columns:
-                st.error("File is missing 'Task' column. Please use the template.")
+                st.error("File is missing 'Task' column.")
             else:
                 if st.button(f"Process {len(df_upload)} rows"):
                     new_rows = []
                     total_import_val = 0
-                    
                     for index, row in df_upload.iterrows():
-                        # Smart Match Department
                         matched_dept = normalize_department(row.get('Department', 'Finance'))
-                        
-                        # Handle Dates safely
-                        try:
-                            d_date = pd.to_datetime(row.get('Due Date', datetime.now()))
-                        except:
-                            d_date = datetime.now() + timedelta(days=30)
-                            
-                        # Handle Cost safely
-                        try:
-                            cost_val = float(str(row.get('Cost', 0)).replace('$','').replace(',',''))
-                        except:
-                            cost_val = 0.0
+                        try: d_date = pd.to_datetime(row.get('Due Date', datetime.now()))
+                        except: d_date = datetime.now() + timedelta(days=30)
+                        try: cost_val = float(str(row.get('Cost', 0)).replace('$','').replace(',',''))
+                        except: cost_val = 0.0
 
-                        new_entry = {
-                            "Task": str(row['Task']),
-                            "Department": matched_dept,
-                            "Assignee": str(row.get('Assignee', 'Team')),
-                            "Due Date": d_date,
-                            "Cost": cost_val,
-                            "Status": False
-                        }
-                        new_rows.append(new_entry)
+                        new_rows.append({"Task": str(row['Task']), "Department": matched_dept, "Assignee": str(row.get('Assignee', 'Team')), "Due Date": d_date, "Cost": cost_val, "Status": False})
                         total_import_val += cost_val
 
-                    # Update State
                     st.session_state.budget_tasks = pd.concat([pd.DataFrame(new_rows), st.session_state.budget_tasks], ignore_index=True)
-                    
-                    # Notify Slack
-                    if SLACK_WEBHOOK_URL:
-                        send_slack_summary(len(new_rows), total_import_val)
-                        
+                    if SLACK_WEBHOOK_URL: send_slack_summary(len(new_rows), total_import_val)
                     st.success("Import Successful!")
                     st.rerun()
-                    
-        except Exception as e:
-            st.error(f"Error reading file: {e}")
+        except Exception as e: st.error(f"Error: {e}")
 
     st.markdown("---")
-    
-    # Manual Add (Existing Logic)
     st.subheader("➕ Single Entry")
     with st.form("add_budget_form", clear_on_submit=True):
         new_task = st.text_input("Line Item Name")
@@ -243,14 +204,9 @@ with st.sidebar:
         new_date = st.date_input("Deadline", value=datetime.now() + timedelta(days=7))
         
         if st.form_submit_button("Add to Board"):
-            new_entry = {
-                "Task": new_task, "Department": new_dept, 
-                "Assignee": new_assignee, "Due Date": pd.to_datetime(new_date), 
-                "Cost": new_cost, "Status": False
-            }
+            new_entry = {"Task": new_task, "Department": new_dept, "Assignee": new_assignee, "Due Date": pd.to_datetime(new_date), "Cost": new_cost, "Status": False}
             st.session_state.budget_tasks = pd.concat([pd.DataFrame([new_entry]), st.session_state.budget_tasks], ignore_index=True)
-            if SLACK_WEBHOOK_URL:
-                send_slack_alert(new_task, new_dept, new_cost, new_assignee)
+            if SLACK_WEBHOOK_URL: send_slack_alert(new_task, new_dept, new_cost, new_assignee)
             st.rerun()
 
 # --- 6. MODERN GRID LAYOUT ---
@@ -276,9 +232,13 @@ for i, (dept_name, dept_color) in enumerate(DEPT_COLORS.items()):
             st.markdown("<div style='padding: 30px; text-align: center; color: #cbd5e1; font-size: 13px;'>No requests</div>", unsafe_allow_html=True)
         else:
             for idx, row in dept_tasks.iterrows():
-                c1, c2, c3 = st.columns([0.15, 0.70, 0.15])
+                # Grid for Row Content: Checkbox | Content | Nudge | Delete
+                c1, c2, c3, c4 = st.columns([0.1, 0.66, 0.12, 0.12])
+                
+                # Checkbox
                 c1.checkbox("", value=row["Status"], key=f"b_{idx}", on_change=toggle_status, args=(idx,))
                 
+                # Content
                 t_style = "text-decoration: line-through; color: #cbd5e1;" if row["Status"] else "font-weight: 600; color: #334155;"
                 cost_str = f"${row['Cost']:,.0f}" if row['Cost'] > 0 else "TBD"
                 
@@ -292,11 +252,17 @@ for i, (dept_name, dept_color) in enumerate(DEPT_COLORS.items()):
                 </div>
                 """, unsafe_allow_html=True)
                 
+                # Nudge Button (Only if active)
                 if not row["Status"]:
                     if c3.button("🔔", key=f"n_{idx}", help="Nudge on Slack"):
                          if SLACK_WEBHOOK_URL:
                             send_slack_alert(row['Task'], row['Department'], row['Cost'], row['Assignee'], is_reminder=True)
                             st.toast("Nudged!", icon="🔔")
+
+                # Delete Button
+                if c4.button("🗑️", key=f"del_{idx}", help="Delete Item"):
+                    delete_task(idx)
+                    st.rerun()
 
                 st.markdown("<div style='border-bottom: 1px solid #f8fafc; margin: 8px 0;'></div>", unsafe_allow_html=True)
 
