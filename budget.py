@@ -84,6 +84,7 @@ st.markdown("""
 
 # --- 2. DATA SETUP ---
 
+# Active Tasks
 if 'budget_tasks' not in st.session_state:
     st.session_state.budget_tasks = pd.DataFrame([
         {
@@ -96,6 +97,11 @@ if 'budget_tasks' not in st.session_state:
             "Status": False
         }
     ])
+
+# Archived Tasks (History)
+if 'archived_tasks' not in st.session_state:
+    # Same columns + "Archived At"
+    st.session_state.archived_tasks = pd.DataFrame(columns=list(st.session_state.budget_tasks.columns) + ['Archived At'])
 
 # Ensure 'Notes' column exists if loaded from old state
 if 'Notes' not in st.session_state.budget_tasks.columns:
@@ -155,7 +161,6 @@ def toggle_status(index):
     st.session_state.budget_tasks.at[index, 'Status'] = not st.session_state.budget_tasks.at[index, 'Status']
 
 def delete_task(index):
-    # If we delete the item being edited, close edit mode
     if st.session_state.editing_index == index:
         st.session_state.editing_index = None
     st.session_state.budget_tasks = st.session_state.budget_tasks.drop(index).reset_index(drop=True)
@@ -209,7 +214,6 @@ if st.session_state.editing_index is not None:
             e_date = col_e5.date_input("Due Date", value=pd.to_datetime(row_to_edit['Due Date']))
             
             # Row 3 Notes
-            # Retrieve existing notes, handle NaN/None
             current_notes = str(row_to_edit['Notes']) if pd.notna(row_to_edit.get('Notes')) else ""
             e_notes = st.text_area("📝 Notes / Comments", value=current_notes)
             
@@ -233,10 +237,37 @@ if st.session_state.editing_index is not None:
             
         st.markdown('</div>', unsafe_allow_html=True)
 
-# --- 6. SIDEBAR (IMPORT & ADD) ---
+# --- 6. SIDEBAR ---
 with st.sidebar:
+    # --- ARCHIVE LOGIC ---
+    st.subheader("🏁 Actions")
+    
+    # Calculate how many are checked
+    completed_df = st.session_state.budget_tasks[st.session_state.budget_tasks["Status"] == True]
+    completed_count = len(completed_df)
+    
+    if completed_count > 0:
+        st.success(f"{completed_count} tasks marked as done.")
+        if st.button(f"📥 Archive Completed ({completed_count})"):
+            # Add timestamp
+            completed_df = completed_df.copy()
+            completed_df['Archived At'] = datetime.now().strftime("%Y-%m-%d %H:%M")
+            
+            # Move to archive
+            st.session_state.archived_tasks = pd.concat([st.session_state.archived_tasks, completed_df], ignore_index=True)
+            
+            # Keep only active tasks
+            st.session_state.budget_tasks = st.session_state.budget_tasks[st.session_state.budget_tasks["Status"] == False].reset_index(drop=True)
+            
+            st.success("Tasks moved to history!")
+            st.rerun()
+    else:
+        st.info("Mark tasks as done to archive them.")
+
+    st.markdown("---")
+    
+    # --- IMPORT ---
     st.subheader("📥 Bulk Import")
-    # Updated template with Notes column
     template_df = pd.DataFrame([{"Task": "Sample Item", "Department": "Marketing", "Assignee": "Alex", "Cost": 1000, "Due Date": "2026-01-30", "Notes": "Optional info"}])
     csv_template = template_df.to_csv(index=False).encode('utf-8')
     st.download_button("📄 Download Excel Template", data=csv_template, file_name="budget_template.csv", mime="text/csv")
@@ -260,7 +291,6 @@ with st.sidebar:
                         try: cost_val = float(str(row.get('Cost', 0)).replace('$','').replace(',',''))
                         except: cost_val = 0.0
                         
-                        # Handle Notes Import
                         note_val = str(row.get('Notes', ""))
                         if note_val == "nan": note_val = ""
 
@@ -332,7 +362,6 @@ for i, (dept_name, dept_color) in enumerate(DEPT_COLORS.items()):
                 t_style = "text-decoration: line-through; color: #cbd5e1;" if row["Status"] else "font-weight: 600; color: #334155;"
                 cost_str = f"${row['Cost']:,.0f}" if row['Cost'] > 0 else "TBD"
                 
-                # Check for notes
                 notes_html = ""
                 if pd.notna(row.get('Notes')) and str(row['Notes']).strip() != "":
                     notes_html = f"<div style='font-size: 11px; color: #64748b; background: #f1f5f9; padding: 4px 8px; border-radius: 4px; margin-top: 6px; display:inline-block;'>📝 {row['Notes']}</div>"
@@ -354,12 +383,10 @@ for i, (dept_name, dept_color) in enumerate(DEPT_COLORS.items()):
                             send_slack_alert(row['Task'], row['Department'], row['Cost'], row['Assignee'], is_reminder=True)
                             st.toast("Nudged!", icon="🔔")
 
-                # Edit (Move) Button
                 if c4.button("✏️", key=f"edit_{idx}", help="Edit/Move Task"):
                     st.session_state.editing_index = idx
                     st.rerun()
 
-                # Delete Button
                 if c5.button("🗑️", key=f"del_{idx}", help="Delete Item"):
                     delete_task(idx)
                     st.rerun()
@@ -367,3 +394,18 @@ for i, (dept_name, dept_color) in enumerate(DEPT_COLORS.items()):
                 st.markdown("<div style='border-bottom: 1px solid #f8fafc; margin: 8px 0;'></div>", unsafe_allow_html=True)
 
         st.markdown("</div>", unsafe_allow_html=True)
+
+# --- 8. HISTORY SECTION (Bottom) ---
+st.markdown("<br><br>", unsafe_allow_html=True)
+with st.expander("📜 Transaction History / Archived Tasks"):
+    if st.session_state.archived_tasks.empty:
+        st.info("No archived tasks yet.")
+    else:
+        st.dataframe(
+            st.session_state.archived_tasks, 
+            use_container_width=True,
+            column_config={
+                "Status": None, # Hide status since they are all done
+                "Cost": st.column_config.NumberColumn(format="$%.2f")
+            }
+        )
