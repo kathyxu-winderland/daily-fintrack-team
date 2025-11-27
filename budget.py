@@ -10,7 +10,6 @@ st.set_page_config(page_title="Budget 2026 Tracker", page_icon="💰", layout="w
 SLACK_WEBHOOK_URL = ""
 
 # Department Configuration
-# I have split Product and Sales & Success here
 DEPT_COLORS = {
     "🎧 Customer Care": "#f97316",       # Orange
     "💻 Development": "#3b82f6",         # Blue
@@ -18,8 +17,8 @@ DEPT_COLORS = {
     "📢 Marketing": "#ec4899",           # Pink
     "🖥️ IT Operation": "#64748b",        # Slate
     "📈 Data & Rev Op": "#8b5cf6",       # Violet
-    "🚀 Product": "#6366f1",             # Indigo (Split)
-    "💼 Sales & Success": "#0ea5e9",     # Sky Blue (Split/New)
+    "🚀 Product": "#6366f1",             # Indigo
+    "💼 Sales & Success": "#0ea5e9",     # Sky Blue
     "⚖️ Legal": "#d97706",               # Amber
     "👔 Leadership": "#111827",          # Black
     "💜 People & Culture": "#06b6d4"     # Cyan
@@ -40,8 +39,8 @@ st.markdown("""
         padding: 2.5rem;
         border-radius: 20px;
         color: white;
-        margin-bottom: 40px;
-        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        margin-bottom: 30px;
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
         display: flex; align-items: center; justify-content: space-between;
     }
     
@@ -61,13 +60,23 @@ st.markdown("""
     
     /* BUTTON STYLING */
     .stButton button { 
-        border-radius: 8px; 
+        border-radius: 6px; 
         border: 1px solid #e2e8f0; 
-        padding: 2px 10px;
+        padding: 2px 8px;
+        font-size: 12px;
     }
     .stButton button:hover {
         border-color: #cbd5e1;
         background-color: #f1f5f9;
+    }
+    
+    /* EDIT FORM STYLING */
+    .edit-box {
+        background-color: #fffbeb;
+        border: 2px solid #fcd34d;
+        padding: 20px;
+        border-radius: 12px;
+        margin-bottom: 30px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -86,20 +95,19 @@ if 'budget_tasks' not in st.session_state:
         }
     ])
 
+# Session state to track which item is being edited
+if 'editing_index' not in st.session_state:
+    st.session_state.editing_index = None
+
 # --- 3. HELPER FUNCTIONS ---
 
 def normalize_department(input_str):
     if not isinstance(input_str, str): return "💰 Finance"
     input_clean = input_str.lower().strip()
-    
-    # Check exact keys first
     for key in DEPT_COLORS.keys():
         if key == input_str: return key
-        
-    # Check match
     for key in DEPT_COLORS.keys():
         if input_clean in key.lower(): return key
-        
     return "💰 Finance"
 
 def send_slack_summary(count, total_value):
@@ -141,6 +149,9 @@ def toggle_status(index):
     st.session_state.budget_tasks.at[index, 'Status'] = not st.session_state.budget_tasks.at[index, 'Status']
 
 def delete_task(index):
+    # If we delete the item being edited, close edit mode
+    if st.session_state.editing_index == index:
+        st.session_state.editing_index = None
     st.session_state.budget_tasks = st.session_state.budget_tasks.drop(index).reset_index(drop=True)
 
 # --- 4. TOP BANNER ---
@@ -165,7 +176,51 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# --- 5. SIDEBAR ---
+# --- 5. EDIT MODE (Active when pencil is clicked) ---
+if st.session_state.editing_index is not None:
+    # Get current values
+    idx = st.session_state.editing_index
+    # Safety check in case index out of bounds
+    if idx in st.session_state.budget_tasks.index:
+        row_to_edit = st.session_state.budget_tasks.iloc[idx]
+        
+        st.markdown('<div class="edit-box">', unsafe_allow_html=True)
+        st.subheader(f"✏️ Editing: {row_to_edit['Task']}")
+        
+        with st.form("edit_mode_form"):
+            col_e1, col_e2, col_e3 = st.columns(3)
+            
+            # Form Inputs pre-filled with existing data
+            e_task = col_e1.text_input("Task Name", value=row_to_edit['Task'])
+            e_cost = col_e1.number_input("Cost ($)", value=float(row_to_edit['Cost']), min_value=0.0)
+            
+            e_dept = col_e2.selectbox("Department (Move)", list(DEPT_COLORS.keys()), index=list(DEPT_COLORS.keys()).index(row_to_edit['Department']) if row_to_edit['Department'] in DEPT_COLORS else 0)
+            e_assignee = col_e2.selectbox("Assignee", TEAM[1:], index=TEAM[1:].index(row_to_edit['Assignee']) if row_to_edit['Assignee'] in TEAM[1:] else 0)
+            
+            e_date = col_e3.date_input("Due Date", value=pd.to_datetime(row_to_edit['Due Date']))
+            
+            submitted = st.form_submit_button("💾 Save Changes")
+            
+            if submitted:
+                # Update DataFrame
+                st.session_state.budget_tasks.at[idx, 'Task'] = e_task
+                st.session_state.budget_tasks.at[idx, 'Department'] = e_dept
+                st.session_state.budget_tasks.at[idx, 'Assignee'] = e_assignee
+                st.session_state.budget_tasks.at[idx, 'Cost'] = e_cost
+                st.session_state.budget_tasks.at[idx, 'Due Date'] = e_date
+                
+                # Close Edit Mode
+                st.session_state.editing_index = None
+                st.success("Task updated successfully!")
+                st.rerun()
+
+        if st.button("Cancel Edit"):
+            st.session_state.editing_index = None
+            st.rerun()
+            
+        st.markdown('</div>', unsafe_allow_html=True)
+
+# --- 6. SIDEBAR (IMPORT & ADD) ---
 with st.sidebar:
     st.subheader("📥 Bulk Import")
     template_df = pd.DataFrame([{"Task": "Sample Item", "Department": "Marketing", "Assignee": "Alex", "Cost": 1000, "Due Date": "2026-01-30"}])
@@ -215,7 +270,7 @@ with st.sidebar:
             if SLACK_WEBHOOK_URL: send_slack_alert(new_task, new_dept, new_cost, new_assignee)
             st.rerun()
 
-# --- 6. MODERN GRID LAYOUT ---
+# --- 7. MODERN GRID LAYOUT ---
 grid_cols = st.columns(3)
 
 for i, (dept_name, dept_color) in enumerate(DEPT_COLORS.items()):
@@ -238,7 +293,8 @@ for i, (dept_name, dept_color) in enumerate(DEPT_COLORS.items()):
             st.markdown("<div style='padding: 30px; text-align: center; color: #cbd5e1; font-size: 13px;'>No requests</div>", unsafe_allow_html=True)
         else:
             for idx, row in dept_tasks.iterrows():
-                c1, c2, c3, c4 = st.columns([0.1, 0.66, 0.12, 0.12])
+                # Columns: Check | Text | Nudge | Edit | Delete
+                c1, c2, c3, c4, c5 = st.columns([0.08, 0.58, 0.1, 0.1, 0.1])
                 
                 c1.checkbox("", value=row["Status"], key=f"b_{idx}", on_change=toggle_status, args=(idx,))
                 
@@ -255,13 +311,20 @@ for i, (dept_name, dept_color) in enumerate(DEPT_COLORS.items()):
                 </div>
                 """, unsafe_allow_html=True)
                 
+                # Nudge Button
                 if not row["Status"]:
                     if c3.button("🔔", key=f"n_{idx}", help="Nudge on Slack"):
                          if SLACK_WEBHOOK_URL:
                             send_slack_alert(row['Task'], row['Department'], row['Cost'], row['Assignee'], is_reminder=True)
                             st.toast("Nudged!", icon="🔔")
 
-                if c4.button("🗑️", key=f"del_{idx}", help="Delete Item"):
+                # Edit Button (Pencil)
+                if c4.button("✏️", key=f"edit_{idx}", help="Edit Task"):
+                    st.session_state.editing_index = idx
+                    st.rerun()
+
+                # Delete Button
+                if c5.button("🗑️", key=f"del_{idx}", help="Delete Item"):
                     delete_task(idx)
                     st.rerun()
 
