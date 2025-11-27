@@ -77,6 +77,7 @@ st.markdown("""
         padding: 20px;
         border-radius: 12px;
         margin-bottom: 30px;
+        box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
     }
 </style>
 """, unsafe_allow_html=True)
@@ -176,45 +177,42 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# --- 5. EDIT MODE (Active when pencil is clicked) ---
+# --- 5. EDIT MODE (The Solution for "Dragging") ---
 if st.session_state.editing_index is not None:
-    # Get current values
     idx = st.session_state.editing_index
-    # Safety check in case index out of bounds
     if idx in st.session_state.budget_tasks.index:
         row_to_edit = st.session_state.budget_tasks.iloc[idx]
         
         st.markdown('<div class="edit-box">', unsafe_allow_html=True)
-        st.subheader(f"✏️ Editing: {row_to_edit['Task']}")
+        st.subheader(f"✏️ Move or Edit: {row_to_edit['Task']}")
         
         with st.form("edit_mode_form"):
             col_e1, col_e2, col_e3 = st.columns(3)
             
-            # Form Inputs pre-filled with existing data
-            e_task = col_e1.text_input("Task Name", value=row_to_edit['Task'])
-            e_cost = col_e1.number_input("Cost ($)", value=float(row_to_edit['Cost']), min_value=0.0)
+            # MOVED DEPARTMENT TO FIRST SLOT FOR QUICK "MOVE"
+            current_dept_idx = list(DEPT_COLORS.keys()).index(row_to_edit['Department']) if row_to_edit['Department'] in DEPT_COLORS else 0
+            e_dept = col_e1.selectbox("📂 Move to Department", list(DEPT_COLORS.keys()), index=current_dept_idx)
             
-            e_dept = col_e2.selectbox("Department (Move)", list(DEPT_COLORS.keys()), index=list(DEPT_COLORS.keys()).index(row_to_edit['Department']) if row_to_edit['Department'] in DEPT_COLORS else 0)
-            e_assignee = col_e2.selectbox("Assignee", TEAM[1:], index=TEAM[1:].index(row_to_edit['Assignee']) if row_to_edit['Assignee'] in TEAM[1:] else 0)
+            e_task = col_e2.text_input("Task Name", value=row_to_edit['Task'])
+            e_cost = col_e3.number_input("Cost ($)", value=float(row_to_edit['Cost']), min_value=0.0)
             
-            e_date = col_e3.date_input("Due Date", value=pd.to_datetime(row_to_edit['Due Date']))
+            current_assignee_idx = TEAM[1:].index(row_to_edit['Assignee']) if row_to_edit['Assignee'] in TEAM[1:] else 0
+            e_assignee = col_e1.selectbox("Assignee", TEAM[1:], index=current_assignee_idx)
+            e_date = col_e2.date_input("Due Date", value=pd.to_datetime(row_to_edit['Due Date']))
             
-            submitted = st.form_submit_button("💾 Save Changes")
+            submitted = st.form_submit_button("💾 Save & Move")
             
             if submitted:
-                # Update DataFrame
                 st.session_state.budget_tasks.at[idx, 'Task'] = e_task
-                st.session_state.budget_tasks.at[idx, 'Department'] = e_dept
+                st.session_state.budget_tasks.at[idx, 'Department'] = e_dept # This moves the card
                 st.session_state.budget_tasks.at[idx, 'Assignee'] = e_assignee
                 st.session_state.budget_tasks.at[idx, 'Cost'] = e_cost
                 st.session_state.budget_tasks.at[idx, 'Due Date'] = e_date
-                
-                # Close Edit Mode
                 st.session_state.editing_index = None
-                st.success("Task updated successfully!")
+                st.success("Task moved/updated successfully!")
                 st.rerun()
 
-        if st.button("Cancel Edit"):
+        if st.button("Cancel"):
             st.session_state.editing_index = None
             st.rerun()
             
@@ -311,15 +309,14 @@ for i, (dept_name, dept_color) in enumerate(DEPT_COLORS.items()):
                 </div>
                 """, unsafe_allow_html=True)
                 
-                # Nudge Button
                 if not row["Status"]:
                     if c3.button("🔔", key=f"n_{idx}", help="Nudge on Slack"):
                          if SLACK_WEBHOOK_URL:
                             send_slack_alert(row['Task'], row['Department'], row['Cost'], row['Assignee'], is_reminder=True)
                             st.toast("Nudged!", icon="🔔")
 
-                # Edit Button (Pencil)
-                if c4.button("✏️", key=f"edit_{idx}", help="Edit Task"):
+                # Edit (Move) Button
+                if c4.button("✏️", key=f"edit_{idx}", help="Edit/Move Task"):
                     st.session_state.editing_index = idx
                     st.rerun()
 
