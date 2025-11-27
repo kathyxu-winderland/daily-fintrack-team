@@ -9,8 +9,7 @@ st.set_page_config(page_title="Budget 2026 Tracker", page_icon="💰", layout="w
 # !!! PASTE YOUR SLACK WEBHOOK URL HERE !!!
 SLACK_WEBHOOK_URL = ""
 
-# Department Configuration with Specific Colors
-# Format: "Name": "Hex Color Code"
+# Department Configuration
 DEPT_COLORS = {
     "🎧 Customer Care": "#f97316",       # Orange
     "💻 Development": "#3b82f6",         # Blue
@@ -20,51 +19,98 @@ DEPT_COLORS = {
     "📈 Data & Rev Op": "#8b5cf6",       # Violet
     "🚀 Product, Sales & Success": "#6366f1", # Indigo
     "⚖️ Legal": "#d97706",               # Amber
-    "👔 Leadership": "#111827",          # Black/Dark
+    "👔 Leadership": "#111827",          # Black
     "💜 People & Culture": "#06b6d4"     # Cyan
 }
 
 TEAM = ["All", "Dept Head", "Alex", "Sarah", "Mike", "Exec Team"]
 
-# Custom CSS
+# Custom CSS - The "Top Tier" Design System
 st.markdown("""
 <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
     .main { background-color: #f8fafc; }
-    h1, h2, h3, p { font-family: 'Inter', sans-serif; }
     
-    /* BANNER STYLE */
+    h1, h2, h3, h4, p, div, span { font-family: 'Inter', sans-serif; }
+    
+    /* MAIN BANNER */
     .budget-banner {
-        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-        padding: 2rem;
-        border-radius: 15px;
+        background: linear-gradient(120deg, #0f172a 0%, #334155 100%);
+        padding: 2.5rem;
+        border-radius: 20px;
         color: white;
-        margin-bottom: 30px;
-        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        margin-bottom: 40px;
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
         display: flex;
         align-items: center;
         justify-content: space-between;
     }
     
-    /* Card Styling */
-    div[data-testid="column"] { background-color: transparent; }
-    
-    .dept-card {
+    /* KANBAN CARD CONTAINER */
+    .kanban-card {
         background-color: white;
-        padding: 20px;
-        border-radius: 12px;
+        border-radius: 16px;
         border: 1px solid #e2e8f0;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-        margin-bottom: 20px;
-        transition: transform 0.2s;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02);
+        margin-bottom: 24px;
+        overflow: hidden; /* Keeps header inside border radius */
+        transition: all 0.2s ease;
     }
-    .dept-card:hover { transform: translateY(-2px); }
-
+    .kanban-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 12px 16px -4px rgba(0, 0, 0, 0.08);
+    }
+    
+    /* CARD HEADER */
+    .card-header {
+        padding: 16px 20px;
+        border-bottom: 1px solid #f1f5f9;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    /* TASK ROW styling */
+    .task-row {
+        padding: 12px 20px;
+        border-bottom: 1px solid #f8fafc;
+    }
+    .task-row:last-child { border-bottom: none; }
+    
+    /* PILLS & BADGES */
+    .meta-pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 4px 10px;
+        border-radius: 20px;
+        font-size: 11px;
+        font-weight: 600;
+        margin-right: 6px;
+    }
+    .assignee-pill { background-color: #f1f5f9; color: #475569; }
+    .cost-pill { background-color: #ecfdf5; color: #059669; letter-spacing: 0.5px; }
+    
+    /* CHECKBOX OVERRIDE */
+    div[data-testid="stCheckbox"] label {
+        padding-top: 2px;
+    }
+    
+    /* BUTTONS */
+    .stButton button {
+        border-radius: 8px;
+        border: 1px solid #e2e8f0;
+        transition: all 0.2s;
+    }
+    .stButton button:hover {
+        border-color: #cbd5e1;
+        background-color: #f8fafc;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # --- 2. DATA SETUP ---
 
-# Initialize Session State
 if 'budget_tasks' not in st.session_state:
     st.session_state.budget_tasks = pd.DataFrame([
         {
@@ -93,167 +139,140 @@ if 'budget_tasks' not in st.session_state:
         },
     ])
 
-# --- 3. HELPER FUNCTIONS ---
+# --- 3. LOGIC & SLACK ---
 
-def send_slack_alert(task, dept, cost, assignee):
-    """Sends a budget alert to Slack"""
-    if not SLACK_WEBHOOK_URL:
-        return
-    
+def send_slack_alert(task, dept, cost, assignee, is_reminder=False):
+    if not SLACK_WEBHOOK_URL: return
     formatted_cost = f"${cost:,.2f}"
     
+    if is_reminder:
+        title, emoji, color, pretext = "Item Reminder", "🔔", "#f59e0b", f"Hey *{assignee}*, update needed:"
+    else:
+        title, emoji, color, pretext = "New Request", "💸", "#10b981", "New budget item added:"
+
     payload = {
-        "text": f"💰 New Budget Item: {task} ({formatted_cost})",
+        "text": f"{emoji} {title}: {task}",
         "blocks": [
-            {
-                "type": "header",
-                "text": {
-                    "type": "plain_text",
-                    "text": "💰 New Budget Request"
-                }
-            },
-            {
-                "type": "section",
-                "fields": [
-                    {"type": "mrkdwn", "text": f"*Department:*\n{dept}"},
-                    {"type": "mrkdwn", "text": f"*Est. Cost:*\n{formatted_cost}"},
-                    {"type": "mrkdwn", "text": f"*Item:*\n{task}"},
-                    {"type": "mrkdwn", "text": f"*Owner:*\n{assignee}"}
-                ]
-            }
+            {"type": "header", "text": {"type": "plain_text", "text": f"{emoji} {title}"}},
+            {"type": "section", "fields": [
+                {"type": "mrkdwn", "text": f"*Dept:* {dept}"},
+                {"type": "mrkdwn", "text": f"*Cost:* {formatted_cost}"},
+                {"type": "mrkdwn", "text": f"*Task:* {task}"},
+                {"type": "mrkdwn", "text": f"*Who:* {assignee}"}
+            ]}
         ]
     }
-    try:
-        requests.post(SLACK_WEBHOOK_URL, json=payload)
-    except:
-        pass
+    try: requests.post(SLACK_WEBHOOK_URL, json=payload)
+    except: pass
 
 def toggle_status(index):
     st.session_state.budget_tasks.at[index, 'Status'] = not st.session_state.budget_tasks.at[index, 'Status']
 
-# --- 4. BANNER SECTION (LIVE MATH) ---
-
-# Calculate Total Spend Live
+# --- 4. TOP BANNER ---
 total_spend = st.session_state.budget_tasks["Cost"].sum()
 formatted_spend = f"${total_spend:,.2f}"
+pending_count = len(st.session_state.budget_tasks[st.session_state.budget_tasks["Status"] == False])
 
 st.markdown(f"""
 <div class="budget-banner">
-    <div style="display: flex; align-items: center; gap: 20px;">
-        <span style="font-size: 50px; background: rgba(255,255,255,0.2); padding: 10px; border-radius: 50%;">📊</span>
+    <div style="display: flex; align-items: center; gap: 24px;">
+        <div style="background: rgba(255,255,255,0.15); padding: 16px; border-radius: 16px; backdrop-filter: blur(5px);">
+            <span style="font-size: 40px;">🏦</span>
+        </div>
         <div>
-            <h1 style="color: white; margin: 0; font-size: 28px; font-weight: 700;">Budget 2026 Master</h1>
-            <p style="color: #ecfdf5; margin: 0; font-size: 16px; opacity: 0.9;">Departmental Tracking & Approval</p>
+            <h1 style="color: white; margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.5px;">Budget Master 2026</h1>
+            <p style="color: #94a3b8; margin: 4px 0 0 0; font-size: 15px;">Tracking {len(st.session_state.budget_tasks)} line items across departments</p>
         </div>
     </div>
     <div style="text-align: right;">
-        <div style="font-size: 14px; color: #d1fae5;">Total Projected Spend</div>
-        <div style="font-size: 32px; font-weight: bold; color: white;">{formatted_spend}</div>
+        <div style="font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8; font-weight: 600;">Projected Spend</div>
+        <div style="font-size: 36px; font-weight: 800; color: white; letter-spacing: -1px;">{formatted_spend}</div>
     </div>
 </div>
 """, unsafe_allow_html=True)
 
 # --- 5. SIDEBAR ---
 with st.sidebar:
-    st.subheader("➕ Add Budget Item")
+    st.subheader("➕ New Request")
     with st.form("add_budget_form", clear_on_submit=True):
-        new_task = st.text_input("Activity / Line Item")
-        # Extract just the keys (names) for the dropdown
+        new_task = st.text_input("Line Item Name")
         new_dept = st.selectbox("Department", list(DEPT_COLORS.keys()))
-        new_assignee = st.selectbox("Owner", TEAM[1:])
+        new_assignee = st.selectbox("Assignee", TEAM[1:])
         new_cost = st.number_input("Est. Cost ($)", min_value=0.0, step=100.0)
         new_date = st.date_input("Deadline", value=datetime.now() + timedelta(days=7))
         
-        if st.form_submit_button("Add Item"):
+        if st.form_submit_button("Add to Board"):
             new_entry = {
                 "Task": new_task, "Department": new_dept, 
                 "Assignee": new_assignee, "Due Date": pd.to_datetime(new_date), 
-                "Cost": new_cost,
-                "Status": False
+                "Cost": new_cost, "Status": False
             }
-            # Add to state
             st.session_state.budget_tasks = pd.concat([pd.DataFrame([new_entry]), st.session_state.budget_tasks], ignore_index=True)
-            
-            # Send Slack Alert
             if SLACK_WEBHOOK_URL:
                 send_slack_alert(new_task, new_dept, new_cost, new_assignee)
-                st.toast("Budget item added & Slack team notified!", icon="🚀")
-            
+                st.toast("Notification sent to Slack!", icon="🚀")
             st.rerun()
             
-    st.divider()
-    
-    # Download Data Button
+    st.markdown("---")
     csv = st.session_state.budget_tasks.to_csv(index=False).encode('utf-8')
-    st.download_button(
-        label="📥 Download Budget CSV",
-        data=csv,
-        file_name='budget_2026.csv',
-        mime='text/csv',
-    )
+    st.download_button(label="📄 Export to Excel/CSV", data=csv, file_name='budget_2026.csv', mime='text/csv')
 
-# --- 6. DASHBOARD METRICS ---
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.metric("Total Line Items", len(st.session_state.budget_tasks))
-with col2:
-    pending_count = len(st.session_state.budget_tasks[st.session_state.budget_tasks["Status"] == False])
-    st.metric("Pending Approval/Action", pending_count)
-with col3:
-    # Calculate % completed
-    total = len(st.session_state.budget_tasks)
-    done = len(st.session_state.budget_tasks[st.session_state.budget_tasks["Status"] == True])
-    progress = (done / total) if total > 0 else 0
-    st.metric("Completion Progress", f"{progress:.0%}")
-    st.progress(progress)
-
-st.divider()
-
-# --- 7. DEPARTMENT GRID (COLOR CODED) ---
+# --- 6. MODERN GRID LAYOUT ---
 grid_cols = st.columns(3)
 
-# Iterate through departments
 for i, (dept_name, dept_color) in enumerate(DEPT_COLORS.items()):
     col_idx = i % 3
     with grid_cols[col_idx]:
-        # Filter tasks
         dept_tasks = st.session_state.budget_tasks[st.session_state.budget_tasks["Department"] == dept_name]
-        
-        # Calculate Dept Total
         dept_total = dept_tasks["Cost"].sum()
         
-        # HTML for Color-Coded Card
-        # We inject the 'dept_color' variable directly into the border-top and text color
+        # 1. THE CARD CONTAINER START
+        # We use a soft background color (hex + '15' opacity) for the header
+        header_bg = f"{dept_color}15" 
+        
         st.markdown(f"""
-        <div class="dept-card" style="border-top: 5px solid {dept_color};">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
-                <h3 style="font-size: 16px; margin:0; font-weight: 700; color: {dept_color};">{dept_name}</h3>
-                <span style="background:{dept_color}15; color:{dept_color}; font-size:11px; padding:3px 8px; border-radius:4px; font-weight:bold;">${dept_total:,.0f}</span>
+        <div class="kanban-card">
+            <div class="card-header" style="background-color: {header_bg};">
+                <span style="font-weight: 700; color: {dept_color}; font-size: 14px;">{dept_name}</span>
+                <span style="font-size: 12px; font-weight: 700; color: {dept_color}; opacity: 0.9;">${dept_total:,.0f}</span>
             </div>
         """, unsafe_allow_html=True)
         
+        # 2. TASK ITEMS LOOP
         if dept_tasks.empty:
-            st.markdown("<div style='color: #9ca3af; text-align: center; font-size: 13px; font-style:italic; padding-bottom:10px;'>No items</div>", unsafe_allow_html=True)
+            st.markdown("<div style='padding: 30px; text-align: center; color: #cbd5e1; font-size: 13px;'>No requests</div>", unsafe_allow_html=True)
         else:
             for idx, row in dept_tasks.iterrows():
-                c1, c2 = st.columns([0.15, 0.85])
+                # Grid for Row Content
+                c1, c2, c3 = st.columns([0.15, 0.70, 0.15])
                 
                 # Checkbox
-                done = c1.checkbox("", value=row["Status"], key=f"bud_{idx}", on_change=toggle_status, args=(idx,))
+                c1.checkbox("", value=row["Status"], key=f"b_{idx}", on_change=toggle_status, args=(idx,))
                 
-                # Styling
-                task_style = "text-decoration: line-through; color: #9ca3af;" if row["Status"] else "font-weight: 500; color: #1f2937;"
-                cost_display = f"${row['Cost']:,.0f}" if row['Cost'] > 0 else "-"
+                # Content
+                # Logic for strike-through text
+                t_style = "text-decoration: line-through; color: #cbd5e1;" if row["Status"] else "font-weight: 600; color: #334155;"
+                cost_str = f"${row['Cost']:,.0f}" if row['Cost'] > 0 else "TBD"
                 
                 c2.markdown(f"""
-                <div style="line-height: 1.3; margin-bottom: 8px;">
-                    <span style="{task_style} font-size: 14px;">{row['Task']}</span><br>
-                    <div style="display:flex; justify-content:space-between; margin-top:4px;">
-                        <span style="font-size: 11px; color: #4b5563;">👤 {row['Assignee']}</span>
-                        <span style="font-size: 11px; color: {dept_color}; font-weight:bold;">{cost_display}</span>
+                <div style="padding-top: 2px;">
+                    <div style="{t_style} font-size: 14px; margin-bottom: 6px;">{row['Task']}</div>
+                    <div style="display: flex; align-items: center;">
+                        <span class="meta-pill assignee-pill">👤 {row['Assignee']}</span>
+                        <span class="meta-pill cost-pill">{cost_str}</span>
                     </div>
                 </div>
-                <div style="border-bottom: 1px dashed #e5e7eb; margin: 8px 0;"></div>
                 """, unsafe_allow_html=True)
+                
+                # Button (Only show if active)
+                if not row["Status"]:
+                    if c3.button("🔔", key=f"n_{idx}", help="Nudge on Slack"):
+                         if SLACK_WEBHOOK_URL:
+                            send_slack_alert(row['Task'], row['Department'], row['Cost'], row['Assignee'], is_reminder=True)
+                            st.toast("Nudged!", icon="🔔")
 
+                # Visual Separator (Markdown) to mimic row line
+                st.markdown("<div style='border-bottom: 1px solid #f8fafc; margin: 8px 0;'></div>", unsafe_allow_html=True)
+
+        # 3. CARD CONTAINER END
         st.markdown("</div>", unsafe_allow_html=True)
