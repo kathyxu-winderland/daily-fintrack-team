@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 st.set_page_config(page_title="Budget 2026 Tracker", page_icon="💰", layout="wide")
 
 # !!! PASTE YOUR SLACK WEBHOOK URL HERE !!!
-SLACK_WEBHOOK_URL = ""
+SLACK_WEBHOOK_URL = "hooks.slack.com/services/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"
 
 # Department Configuration
 DEPT_COLORS = {
